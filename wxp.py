@@ -32,6 +32,7 @@ import wx.lib.colourselect as  colourselect
 #import colourselect_dpi as colourselect
 from wx.lib.agw.floatspin import FloatSpin
 from wx.lib.agw.hyperlink import HyperLinkCtrl
+import wx.lib.agw.ultimatelistctrl as ULC
 from wx import stc
 import string
 import keyword
@@ -186,6 +187,18 @@ class ListCtrl(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin):
 
     def GetSelectedItem(self):
         return self.GetNextItem(-1, wx.LIST_NEXT_ALL, wx.LIST_STATE_SELECTED)
+
+class UListCtrl(ULC.UltimateListCtrl, listmix.ListCtrlAutoWidthMixin):
+    def __init__(self, parent, ID,  agwStyle=0):
+        ULC.UltimateListCtrl.__init__(self, parent, ID, agwStyle=agwStyle)
+        self.parent = parent
+
+    def SelectItem(self, item):
+        self.SetItemState(item, ULC.ULC_STATE_SELECTED|ULC.ULC_STATE_FOCUSED, ULC.ULC_STATE_SELECTED|ULC.ULC_STATE_FOCUSED)
+        self.EnsureVisible(item)
+
+    def GetSelectedItem(self):
+        return self.GetNextItem(-1, ULC.ULC_NEXT_ALL, ULC.ULC_STATE_SELECTED)
 
 class MenuItemInfo(object):
     def __init__(self, label=None, handler=None, status=None, submenu=None, id=wx.ID_ANY):
@@ -2077,7 +2090,7 @@ class EditStringDictDialog(wx.Dialog):
 
     def UpdateDictEntry(self):
         if self.infoDict.has_key(self.previousKey) and self.textChanged:
-            self.infoDict[self.previousKey] = self.textCtrl.GetValue()
+            self.infoDict[self.previousKey] = self.textCtrl.GetValue().strip()
 
     def OnValueTextChanged(self, event):
         self.textChanged = True
@@ -2128,7 +2141,7 @@ class EditStringDictDialog(wx.Dialog):
                     return
             # "Rename" the key in the dictionary
             del self.infoDict[self.editName]
-            self.infoDict[newName] = self.textCtrl.GetValue()
+            self.infoDict[newName] = self.textCtrl.GetValue().strip()
 
     def OnButtonInsert(self, event):
         dlg = wx.Dialog(self, wx.ID_ANY, _('Insert a new item'))
@@ -2155,7 +2168,7 @@ class EditStringDictDialog(wx.Dialog):
         # Show the dialog
         ID = dlg.ShowModal()
         newKey = keyTextCtrl.GetValue().lstrip('.')
-        newValue = valueTextCtrl.GetValue()
+        newValue = valueTextCtrl.GetValue().strip()
         dlg.Destroy()
         # Add the new item to the dictionary as well as the listCtrl
         if ID == wx.ID_OK:
