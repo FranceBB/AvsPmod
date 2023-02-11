@@ -3781,7 +3781,7 @@ float "ss"=1.5 (1.0 to 3.0)
 
 DGHDRToSDR(
 clip,
-int "white"=400 (1 to 10000),
+int "white"=1500 (1 to 10000),
 int "black"=0 (1 to 1000),
 float "gamma"=0.42 (0.01 to 1.00),
 float "hue"=0.00 (-1.00 to 1.00),
