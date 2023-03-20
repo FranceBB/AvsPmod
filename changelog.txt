@@ -37,6 +37,44 @@ AvsPmod can only provide a user-friendly editor if he has no problems with the n
 If, for example, there is a '-' in the file name of the dll, AvsPmod will report it at startup, 
 please rename this dll and replace the '-' with a '_'
 
+--------------------------
+Version 2.7.4.0 [2023-03-19] GPo
+--------------------------
+* Fullscreen mode reworked. 
+* Fullsize\Fullscreen mode now only possible when accessing avisynth in threads enabled. (Options > Access avisynth in threads)
+* Added: When fullsize or fullscreen an information dialog appears when a frame is loaded and the loading takes longer than 4 seconds. 
+- under Program Options > Misc2 > 'Fullscreen\Fullsize progress dialog' you can set the position for this.
+* Fix: Resample zoom flickering when zooming with the mouse wheel.
+* Some other changes
+
+--------------------------
+Version 2.7.3.8 - 2.7.3.9 [2023-03-11] GPo
+--------------------------
+* Fix: Fullscreen mode did not work with larger video dimensions.
+- some code additions and changes for the Fullscreen mode.
+* Big Note: 
+- If Avisynth is trimmed too much with SetMemoryMax, all AvsPmod filters will take longer. 
+- The Resample filter normally takes less than 1 second, but if the Avisynth memory is reduced too much, it can take 10 seconds.
+* When exiting the Fullscreen mode, the slider window is restored if it was visible before. 
+* If AvsPmod is terminated, it now looks nicer.
+* 2.7.3.9 Fix: The fullscreen window sometimes appeared in normal size when fullscreen was not active.
+
+--------------------------
+Version 2.7.3.7 [2023-03-05] GPo
+--------------------------
+* Added Fullscreen mode, old Fullscreen mode now called Fullsize (you must set new shortcut)
+- press Shift on double clicking the video or use menu Video > Additional > 'Fullscreen'
+- remainder: Press Ctrl on double clicking the video for Fullsize mode
+* Added Program Options > Misc2 > 'Fullscreen zoom' default normal fill, read the readme_FullscreenZoom.txt in the Archive.
+- for Resample: the Resample zoom must be enabled, Program Options > Misc2 > 'Show Resample zoom menu'
+* Video controls can be shown in Fullscreen mode.
+- move the mouse at the very bottom of the screen edge (10 pixels x DPI scalling). 
+- they are hidden again when you left-click in the video window.
+* Added Program options > Misc2 > 'Display filter enabled on startup'
+* Numbers Wheel faster option is now disabled at start (otherwise the last decimal digit could not be changed).
+- toggle between fast and normal: if active then a middle mouse click. The status bar shows the status.
+* When the video is drawn with Resize Filter a small green triangle is visible in the upper left corner.
+* Fixed: At the top left of the video window sometimes appeared a small square (10x10 pixel).
 
 --------------------------
 Version 2.7.3.4 - 2.7.3.5 - 2.7.3.6 [2023-02-13] GPo
