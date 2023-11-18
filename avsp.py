@@ -66,7 +66,7 @@ import subprocess, shlex
 import socket
 #import gc
 import pyaudio
-#import sounddevice
+
 if sys.maxsize > 2**32:
     from cffi import FFI
     ffi = FFI()
@@ -136,6 +136,7 @@ def _(s):
 builtins._ = _ # Python3
 # Python2 only: __builtin__._ = _
 
+#sys.getfilesystemencoding = lambda: 'utf-8'
 encoding = sys.getfilesystemencoding()
 
 import wx
@@ -5701,7 +5702,11 @@ class ScriptSelector(wx.Dialog):
         if not self.CanTabWrite(self.tabName):
             return
         tabName = self.tabName
-        lastDir = self.scriptDict[tabName]['lastdir'] if os.path.isdir(self.scriptDict[tabName]['lastdir']) else ''
+        if not 'lastdir' in self.scriptDict[tabName]:
+            self.scriptDict[tabName]['lastdir'] = ''
+            lastDir = ''
+        else:
+            lastDir = self.scriptDict[tabName]['lastdir'] if os.path.isdir(self.scriptDict[tabName]['lastdir']) else ''
         paths = [] # for multi path dialog
         if _paths:
             paths = _paths
@@ -8215,6 +8220,7 @@ class SliderPlus(wx.Panel):
         #~self.mouse_wheel_rotation = 0  # GPo, not used
         # Internal display variables
         self.isclicked = False
+        self.buttonDown = False
         self.xdelta = None
         self.selections = None
         self.selmode = 0
@@ -8270,8 +8276,9 @@ class SliderPlus(wx.Panel):
             colorHandle2 = (min(r+50, 255),min(g+50,255),min(b+50,255)) #(185,185,185)
             colorOffset = (max(r-20, 0),max(g-20,0),max(b-15,0))  #(85, 80, 85)
             brushHandleHighlight = colorHandle2
+            colorTBookmarks = (0,0,255)
             #self.colorSelections = self.selectionsHilightColor
-            self.app.frameTextCtrl.SetBackgroundColour(wx.Colour(185,190,190))
+            self.app.frameTextCtrl.SetBackgroundColour(wx.Colour(185,195,195))
         else:
             self.IsThemeColor = False
             self.colorBackground = self.oldBackgroundColour #  wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
@@ -8284,6 +8291,7 @@ class SliderPlus(wx.Panel):
             colorHandle2 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_BTNHIGHLIGHT)
             colorOffset = self.colorBackground
             brushHandleHighlight = colorHandle2
+            colorTBookmarks = (0,0,255)
             #self.colorSelections = wx.BLUE
             self.app.frameTextCtrl.SetBackgroundColour(wx.WHITE)
         self.parent.SetBackgroundColour(self.colorBackground)
@@ -8323,6 +8331,8 @@ class SliderPlus(wx.Panel):
         self.brushGrayText = wx.Brush(colorGrayText)
         self.penBookmarks = wx.Pen(colorBookmarks)
         self.brushBookmarks = wx.Brush(colorBookmarks)
+        self.brushTBookmarks = wx.Brush(colorTBookmarks)
+        self.penTBookmarks = wx.Pen(colorTBookmarks)
         self.brushOffset = wx.Brush(colorOffset)
         self.penOffset = wx.Pen(colorOffset)
         self.brushSplitClip =  wx.Brush(self.app.options['timelinesplitclipcolor'])  # default wx.Brush((100,160,120))
@@ -8335,7 +8345,7 @@ class SliderPlus(wx.Panel):
 
     def _OnLeftDown(self, event):
         self.app.lastshownframe = self.app.paintedframe
-        self.paintWait = False
+        self.paintWait = self.buttonDown = False
         mousepos = event.GetPosition()
         x, y, w, h = self.GetRect()
         rectHandle = self._getRectHandle()
@@ -8343,6 +8353,7 @@ class SliderPlus(wx.Panel):
         if rectHandle.Inside(mousepos): # slider button itself
             self._StopPlaying()
             self.isclicked = True
+            self.buttonDown = True
             self.paintWait = True
             self.xdelta = mousepos.x - rectHandle.x
             self.CaptureMouse()
@@ -8382,6 +8393,8 @@ class SliderPlus(wx.Panel):
             self.ReleaseMouse()
             self.adjust_handle = True
             self._SendScrollEndEvent()
+            if self.selmode == 1 and wx.GetKeyState(wx.WXK_CONTROL):
+                self.BookmarkRangeToSelection()
         else:
             # If clicked on a bookmark, go to that frame
             mousepos = event.GetPosition()
@@ -8522,7 +8535,7 @@ class SliderPlus(wx.Panel):
             if pixelpos == lastpixelpos: # speed it up if next bookmark pixelpos the last one (int rounding float/int)
                 continue
             if value in self.titleDict:
-                dc.SetBrush(wx.BLUE_BRUSH)
+                dc.SetBrush(self.brushTBookmarks)
             else:
                 dc.SetBrush(self.brushBookmarks)
             p1 = wx.Point(pixelpos, h-wT/2)
@@ -8701,6 +8714,30 @@ class SliderPlus(wx.Panel):
                     dc.SetPen(self.penGrayText)
                     dc.SetBrush(self.brushGrayText)
                 dc.DrawPolygon((p1, p2, p3))
+
+    def BookmarkRangeToSelection(self):
+        if not self.bookmarks:
+            return
+        frame = frame2 = self.GetValue()
+        bml = [value for value in self.bookmarks.keys()]
+        bml.sort()
+        if frame in bml:
+            frame += 1
+
+        dec = 1 if self.app.options['bookmarkrangedec'] else 0
+        idx = bisect.bisect_left(bml, frame) or -1
+        bm = 0 if idx < 0 else bml[idx-1]
+
+        idx = bisect.bisect_right(bml, frame2)
+        bm2 = self.GetMax()-1 if idx == len(bml) else bml[idx] - dec
+        if bm2 > bm:
+            for slider in self.app.GetVideoSliderList():
+                if bm-dec in slider.selectionsDict.keys() and slider.selectionsDict[bm-dec] == 2:
+                    del slider.selectionsDict[bm-dec] # auto join the bookmark range
+                    slider.SetBookmark(bm2, 2, refresh=True)
+                else:
+                    slider.SetBookmark(bm, 1, refresh=False)
+                    slider.SetBookmark(bm2, 2, refresh=True)
 
     # GPo 2020 changed (childSelectionsDict = script selectionsDict)
     def _createSelections(self):
@@ -8936,7 +8973,7 @@ class SliderPlus(wx.Panel):
         return None
 
     def HitTestSelectionButton(self, mousepos):
-        if self.selmode == 1:
+        if self.selmode == 1 and not self.buttonDown:
             x, y, w, h = self.GetRect()
             pixelpos = int(self.value* (w-2*self.xo) / float(self.maxValue - self.minValue))
             rectLeftButton = wx.Rect(pixelpos-self.wH/2+self.xo-self.wH, self.yo-3, self.wH, (h-self.yo-self.yo2+6)/1)
@@ -9088,6 +9125,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         self.blockEventSize = False
         self.ClipRefreshPainter = None       # GPo, clip thread progress event blocker
         self.fullScreenWnd_IsShown = False
+        self.overlayData = None  # Data for overlay hint tuple (x, y, text, kill_time)
         # audio
         self.pyaudio = None
         self.audio_stream = None
@@ -9161,6 +9199,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         self.readFrameProps = False
         self.resizeFilter = (False, self.options['resizefilter'], 1, True) # enabled, filter, zoom, fitHeight
         self.mintextlines = self.options['mintextlines']
+        self.minscript_width = intPPI(450)
         self.mainSplitter_SetSashPos = None
         self.SplitClipCtrl = SplitClipCtrl(self)
         self.sdlWindow = SDLWindow(self)
@@ -10504,16 +10543,19 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             'savemarkedavs': False,                  # GPo, changed to false, i don't like hidden scripts
             'timelineautoscroll': True,              # GPo, scroll the timeline range if needed
             'timelineautoreset': True,               # GPo, reset the range if frame count change
+            'timelinefreescrollrange': False,        # GPo, allow free scrolling through the timeline (Statusbar) else Ctrl must be pressed
             'timelinemoveslidertostart': True,       # GPo, set slider to timeline start
             'timelinestatusbarmovesense': 100,       # GPo, sensevity timeline mouse move
             'timelinehidenumbers': True,             # GPo, automatically hide the numbers if trim dialog shown
             'timelinenumdivisor': 5,                 # GPo, timline number divisor e.g. 10 shows 9 numbers
             'timelinesplitclipcolor': (100,160,120), # GPo, timeline color if Split Clip enabled
+            'bookmarkrangedec': True,                # GPo, reduce the end selection by the value 1 on setting the bookmark range
             'autosnapshot': True,                    # GPo, automatically take snapshot 2 on clip refresh
+            'paintzoomhint': True,                   # GPo, paint hint on left and right zoom action area (fullsize, fullscreen, rasample zoom)
             'propwinhorzscroll': False,              # GPo, property wnd scrollbar
             'propwinwordwarp': False,                # GPo, property wnd word warp
             'sessionbackupcount': 3,                 # GPo, max session backups at startup
-            'showresamplemenu': 0,                   # GPo, 1= as submenu, 2=normal 0= hidden and disabled
+            'showresamplemenu': 2,                   # GPo, 1= as submenu, 2=normal 0= hidden and disabled
             'resizevideowindow': True,               # GPo, resize the video window on set zoom and tab change
             'showbuttontooltip': True,               # GPo, show video controls button tooltips
             'propwindowparent': 0,                   # GPo, property window parent (0,1) 0=propertyWnd, 1=sliderWnd
@@ -11540,10 +11582,14 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     dict(choices=[(_('Show progress, (program no response)'),0), (_('Show progress (Shift hide program)'), 1), (_('Hide progress (Ctrl do show, Shift hide program)'), 2),]) ), ),
                 ((_('Show frame properties*'), wxp.OPT_ELEM_LIST, 'propwindowparent', _('Place you want show the frame properties'), dict(choices=[(_('Separate window'),0), (_('Slider window top'),1), (_('Slider window bottom'),2)]) ),
                  (_('Separate window docking'), wxp.OPT_ELEM_CHECK, 'propwindowdocking', _('Dock bottom-left on main frame'), dict() ), ),
-                ((_('Show resample zoom menu*'), wxp.OPT_ELEM_LIST, 'showresamplemenu', _("Show/hide resample menu in zoom menu.\n!! Read Help > 'Resample filter readme'"), dict(choices=[(_('Hide (disabled)'),0), (_('As Submenu'),1), (_('Normal'),2)]) ), ),
+                #((_('Show resample zoom menu*'), wxp.OPT_ELEM_LIST, 'showresamplemenu', _("Show/hide resample menu in zoom menu.\n!! Read Help > 'Resample filter readme'"), dict(choices=[(_('Hide (disabled)'),0), (_('As Submenu'),1), (_('Normal'),2)]) ), ),
+                ((_('Show resample zoom menu*'), wxp.OPT_ELEM_LIST, 'showresamplemenu', _("Show/hide resample menu in zoom menu.\n!! Read Help > 'Resample filter readme'"), dict(choices=[(_('As Submenu'),1), (_('Normal'),2)]) ), ),
                 ((_('Fullscreen zoom'), wxp.OPT_ELEM_LIST, 'fullscreenzoom', _('Zoom on Fullscreen. Note: Resample only if Resample enabled'), dict(choices=[(_('None'),0), (_('Normal'),1), (_('Resample'),2)]) ), ),
                 ((_('Fullscreen/Fullsize  progress dialog'), wxp.OPT_ELEM_LIST, 'fullscreendlgxy', _('Position for the static progress information on loading a frame'), dict(choices=[(_(r'top\left'),0), (_(r'top\right'),1), (_(r'top\center'),2), (_(r'bottom\left'),3), (_(r'bottom\right'),4)]) ), ),
+                #((_('Show hint for the zoom action area'), wxp.OPT_ELEM_CHECK, 'paintzoomhint', _('Draw a hint when the mouse is in a zoom action area (Fullsize, Fullscreen, Resample'), dict() ), ),
+                ((_('Show hint for the zoom action area'), wxp.OPT_ELEM_LIST, 'paintzoomhint', _('Draw a hint when the mouse is in a zoom action area (Fullsize, Fullscreen, Resample'), dict(choices=[(_('Off'),0), (_('On - statical'),1), (_('On - auto hide'),2)]) ), ),
                 ((_('Display filter enabled on startup'), wxp.OPT_ELEM_CHECK, 'displayfilter_enabled', _('Enable the Display filter on startup'), dict() ), ),
+
             ),
         )
 
@@ -11597,6 +11643,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             else:
                  self.ShowVideoFrame(forceLayout=True, focus=False)
         self.ResetZoomAntialias()
+        if wx.GetKeyState(wx.WXK_CONTROL):
+            self.minscript_width = self.mainSplitter.GetSashPosition()
         if event:
             event.Skip()
 
@@ -11761,6 +11809,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             self.zoom_antialias = False
             if self.FindFocus() == self.titleEntry:
                 self.scriptNotebook.SetFocus()
+            if wx.GetKeyState(wx.WXK_CONTROL):
+                self.mainSplitter.SetMinimumPaneSize(1)
             event.Skip()
         self.mainSplitter.Bind(wx.EVT_LEFT_DOWN, OnMainSplitterLeftDown)
 
@@ -12067,20 +12117,28 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 self.mainSplitter.SetMinimumPaneSize(minpanesize)
         else:
             if mlines < 0:
-                self.mintextlines = max(0, intPPI(450))
+                self.mintextlines = self.minscript_width
             else:
-                self.mintextlines = max(0, mlines)
+                self.mintextlines = mlines
             minpanesize = self.mintextlines
             if not onlyReturnValue:
                 self.mainSplitter.SetMinimumPaneSize(minpanesize)
         return minpanesize
 
     def bindShortcutsToAllWindows(self):
+        # needed for video window fullscreen if shortcut not in self.exceptionShortcuts
+        # or we must bind all shortcuts, see below: if self.separatevideowindow:
+        videoWindowMenuLabels = [
+            _('Next tab'),
+            _('Previous tab'),
+            _('Previously selected tab'),
+        ]
         self._shortcutBindWindowDict = {self:[], self.videoWindow:[]}
         self.useEscape = False
         for label, shortcut, id in self.options['shortcuts']:
             if not shortcut:
                 continue
+            sl = label.split(' -> ', 1)
             if shortcut.endswith('Escape'):
                 self.useEscape = True
             if shortcut in self.exceptionShortcuts:
@@ -12088,10 +12146,12 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             elif shortcut != 'Escape' and shortcut in self.options['reservedshortcuts']:
                 if (label, shortcut) not in self.stcShortcuts[-1]:
                     self._shortcutBindWindowDict[self.videoWindow].append(id)
+            elif len(sl) > 1 and sl[1] in videoWindowMenuLabels: # GPo new, bind shortcuts from file menu (for fullscreen)
+                self._shortcutBindWindowDict[self.videoWindow].append(id)
             else:
                 self._shortcutBindWindowDict[self].append(id)
+
         self.BindShortcutsToWindows(self.options['shortcuts'])
-        #~ self.BindShortcutsToWindows(self.optionsShortcuts, forcewindow=self.scrapWindow.textCtrl)
         self.scrapWindow.BindShortcuts()
         # Bind shortcuts to the video window if necessary
         if self.separatevideowindow:
@@ -12254,6 +12314,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             ('75% resample', '', self.OnMenuVideoZoomResampleZoom, _("Use resample filter"), wx.ITEM_NORMAL),
             ('200% resample!', '', self.OnMenuVideoZoomResampleZoom, _("Use resample filter"), wx.ITEM_NORMAL),
         )
+        if self.options['showresamplemenu'] == 0:
+            self.options['showresamplemenu'] = 2 # resample filter menu now on as default
         idx = self.options['showresamplemenu']
         if idx == 1:
             _zoomMenu += ((_('Resample filter'), _resampleMenu),)
@@ -12414,6 +12476,10 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     ('6', '', self.OnMenuVideoGroupAssignTabGroup, _('Add tab to this group'), wx.ITEM_RADIO, False),
                     ('7', '', self.OnMenuVideoGroupAssignTabGroup, _('Add tab to this group'), wx.ITEM_RADIO, False),
                     ('8', '', self.OnMenuVideoGroupAssignTabGroup, _('Add tab to this group'), wx.ITEM_RADIO, False),
+                    (''),
+                    (_('Change current group...'), '', self.OnMenuVideoGroupChangeTabGroup, _('Change current tab group')),
+                    (_('Change current/left tabs group...'), '', self.OnMenuVideoGroupChangeLeftTabGroup, _('Change current and left tab group')),
+                    (_('Change current/right tabs group...'), '', self.OnMenuVideoGroupChangeRightTabGroup, _('Change current and right tab group')),
                     (''),
                     (_('Clear current tab group'), '', self.OnMenuVideoGroupClearTabGroup, _('Clear current tab group')),
                     (_('Clear all tab groups'), '', self.OnMenuVideoGroupClearAllTabGroups, _('Clear all tab groups')),
@@ -12665,6 +12731,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 (_('Video information'), '', self.OnMenuVideoInfo, _('Show information about the video in a dialog box')),
             ),
             (_('&Options'),
+                #(_('Force UTF-8 encoding'), '', self.OnMenuOptionsSetAvisynthEncoding, _('Script encoding UTF-8 else system default'), wx.ITEM_CHECK, self.options['avs_encoding']=='utf8'),
                 (_('Always on top'), '', self.OnMenuOptionsAlwaysOnTop, _('Keep this window always on top of others'), wx.ITEM_CHECK, self.options['alwaysontop']),
                 (_('Video preview always on top'), '', self.OnMenuOptionsPreviewAlwaysOnTop, _('If the video preview is detached, keep it always on top of other windows'), wx.ITEM_CHECK, self.options['previewalwaysontop']),
                 (_('Disable video preview'), '', self.OnMenuOptionsDisablePreview, _('If checked, the video preview will not be shown under any circumstances'), wx.ITEM_CHECK, self.options['disablepreview']),
@@ -12724,7 +12791,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 (_('Audio playback readme'), '', self.OnMenuHelpAudio, _('Open the Audio readme')),
                 (''),
                 (_('DPI info'), '', self.OnMenuDPIInfo, _('DPI information')),
-                #(_('Active video thread count'), '', self.OnMenuTest, _('Prints the active running thread count. Normaly 0')),
                 (_('Show available system memory'), '', self.OnMenuShowFreeMemory, _('Displays the available memory in the status bar')),
                 (_('Open Avisynth plugins folder'), '', self.OnMenuHelpAvisynthPlugins, _('Open the avisynth plugins folder, or the last folder from which a plugin was loaded')),
                 (''),
@@ -12962,13 +13028,12 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         # Create the right-click menu
         menuInfo = (
             (_('Close'), '', self.OnMenuFileClose),
-            #(_('Close all others'), '', self.OnMenuFilesOthersClose),
-            # Bad if multitabline style
             (_('Close...'),
                 (
-                (_('Close all others'), '', self.OnMenuFilesOthersClose),
-                (_('Close all left'), '', self.OnMenuFilesCloseLeft),
-                (_('Close all right'), '', self.OnMenuFilesCloseRight),
+                (_('All others'), '', self.OnMenuFilesOthersClose),
+                (_('All on left'), '', self.OnMenuFilesCloseLeft),
+                (_('All on right'), '', self.OnMenuFilesCloseRight),
+                (_('All unopened'), '', self.OnMenuFilesCloseNotOpened),
                 ),
             ),
             (_('Rename'), '', self.OnMenuFileRenameTab),
@@ -12984,6 +13049,10 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 ('7', '', self.OnGroupAssignTabGroup, _('Add tab to this group'), wx.ITEM_RADIO, False),
                 ('8', '', self.OnGroupAssignTabGroup, _('Add tab to this group'), wx.ITEM_RADIO, False),
                 (''),
+                (_('Change current group...'), '', self.OnMenuVideoGroupChangeTabGroup, _('Change current tab group')),
+                (_('Change current/left tabs group...'), '', self.OnMenuVideoGroupChangeLeftTabGroup, _('Change current and left tabs group')),
+                (_('Change current/right tabs group...'), '', self.OnMenuVideoGroupChangeRightTabGroup, _('Change current and right tabs group')),
+                (''),
                 (_('Clear current tab group'), '', self.OnGroupClearTabGroup, _('Clear current tab group')),
                 (_('Clear all tab groups'), '', self.OnGroupClearAllTabGroups, _('Clear all tab groups')),
                 (''),
@@ -12993,7 +13062,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     wx.ITEM_CHECK, self.options['offsetbookmarks']),
                 (''),
                 (_('Freeze Split View frame'), '', self.OnMenuSplitViewFreeze, _("If Split View then freeze the frame number"), wx.ITEM_CHECK, False),
-                #(_('Locate frame'), '', self.OnMenuLocateFrame, _("Reade the LocateFrame readme")),
                 ),
             ),
             (''),
@@ -13486,6 +13554,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         def OnMenuAutoScroll(event):
             self.options['timelineautoscroll'] = event.IsChecked()
             self.timelineAutoScroll = event.IsChecked()
+        def OnMenuFreeScrollRange(event):
+            self.options['timelinefreescrollrange'] = event.IsChecked()
         def OnMenuSetValue(event):
             item = popup.FindItemById(event.GetId())
             label = item.GetLabel()
@@ -13507,10 +13577,14 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     popup.Append(id, label, kind=wx.ITEM_CHECK)
                     popup.Check(id, self.timelineAutoScroll)
                     self.Bind(wx.EVT_MENU, OnMenuAutoScroll, id=id)
-                elif label == _('Auto reset'):
+                elif label == _('Auto reset range'):
                     popup.Append(id, label, kind=wx.ITEM_CHECK)
                     popup.Check(id, self.timelineAutoReset)
                     self.Bind(wx.EVT_MENU, OnMenuAutoReset, id=id)
+                elif label == _('Free scroll range'):
+                    popup.Append(id, label, kind=wx.ITEM_CHECK)
+                    popup.Check(id, self.options['timelinefreescrollrange'])
+                    self.Bind(wx.EVT_MENU, OnMenuFreeScrollRange, id=id)
                 elif label == _('Custom...'):
                     popup.Append(id, label, kind=wx.ITEM_NORMAL)
                     self.Bind(wx.EVT_MENU, OnMenuCustomRange, id=id)
@@ -13529,8 +13603,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             else: popup.AppendSeparator()
 
         if not self.StatusBarContextMenu:
-            menu = [_('Show nothing'), _('Show time'), '', _('Auto reset'), _('Auto scroll'), '', _('Custom...'), _('Percent'), '', '50 frames', '100 frames',
-                    '200 frames', '400 frames', '800 frames', '2000 frames', '5000 frames', '', '100 %']
+            menu = [_('Show nothing'), _('Show time'), '', _('Auto reset range'), _('Free scroll range'), _('Auto scroll'), '', _('Custom...'), _('Percent'),
+                    '', '50 frames', '100 frames', '200 frames', '400 frames', '800 frames', '2000 frames', '5000 frames', '', '100 %']
             popup = wx.Menu()
             for item in menu: createMenu(item)
             self.StatusBarContextMenu = popup
@@ -13673,7 +13747,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 x = event.GetPosition()[0]
                 if x != self.mouseDownXY[0]:
                     val = 0 if not event.ShiftDown() else max(int(self.videoSlider.maxValue/self.options['timelinestatusbarmovesense']) *4, 1)
-                    fullRange = event.ControlDown() or event.ShiftDown()
+                    fullRange = self.options['timelinefreescrollrange'] or event.ControlDown() or event.ShiftDown()
                     if self.playing_video:
                         self.CheckPlayback()
                     if x > self.mouseDownXY[0]:
@@ -13685,7 +13759,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         def OnStatusbarDClick(event):
             if self.timelineRange > 0:
                 if event.GetPosition()[0] > self.GetSize()[0]/2.0:
-                    if event.ControlDown() or event.ShiftDown():
+                    if event.ControlDown() or event.ShiftDown(): # not used here -> self.options['timelinefreescrollrange'] (move only full if event pressed)
                         self.MoveTimelineRange(1, self.timelineRange if not event.ShiftDown() else self.timelineRange*4, False, False, True)
                     else: self.MoveTimelineRange(1, self.GetFrameNumber()-self.videoSlider.startOffset, True, True, True)
                 else:
@@ -13935,10 +14009,18 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         choiceSizer.Add(choiceBoxInsert, 0, wx.RIGHT, intPPI(5))
         dlg.ctrls['choiceInsert'] = choiceBoxInsert
         # Create a static text message
+        """
         staticText = wx.StaticText(dlg, wx.ID_ANY,
             _(
                 'Use the buttons which appear on the video slider '
                 'handle to create the frame selections to trim.'
+            )
+        )
+        """
+        staticText = wx.StaticText(dlg, wx.ID_ANY,
+            _(
+                'For selections use the smal buttons on the video slider. '
+                'For bookmark range press Ctrl and use the slider button.'
             )
         )
         staticText.Wrap(choiceSizer.GetMinSize()[0])
@@ -13953,6 +14035,12 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             event.Skip()
         checkBox4.Bind(wx.EVT_CHECKBOX, OnCheckBox4)
         checkBox4.SetValue(self.options['timelinehidenumbers'])
+        # bookmark range
+        def OnCheckBox5(event):
+            self.options['bookmarkrangedec'] = event.IsChecked()
+        checkBox5 = wx.CheckBox(dlg, wx.ID_ANY, _('Bookmark range -1'))
+        checkBox5.SetValue(self.options['bookmarkrangedec'])
+        checkBox5.Bind(wx.EVT_CHECKBOX, OnCheckBox5)
         # Create the dialog buttons
         buttonApply = wx.Button(dlg, wx.ID_OK, _('Apply'))
         dlg.Bind(wx.EVT_BUTTON, self.OnTrimDialogApply, buttonApply)
@@ -13972,7 +14060,13 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         sizer.Add(clipSizer, 0, wx.LEFT|wx.RIGHT|wx.BOTTOM, intPPI(10))
         sizer.Add(choiceSizer, 0, wx.ALL, intPPI(5))
         sizer.Add(wx.StaticLine(dlg), 0, wx.EXPAND|wx.TOP, intPPI(5))
-        sizer.Add(checkBox4, 0, wx.ALL, intPPI(10))
+        #sizer.Add(checkBox4, 0, wx.ALL, intPPI(10))
+
+        exSizer = wx.BoxSizer(wx.HORIZONTAL)
+        exSizer.Add(checkBox4, 0, wx.ALL, intPPI(10))
+        exSizer.Add(checkBox5, 0, wx.ALL, intPPI(10))
+        sizer.Add(exSizer)
+
         sizer.Add(staticText, 0, wx.ALIGN_CENTER|wx.EXPAND|wx.ALL, intPPI(5))
         sizer.Add(buttonSizer, 0, wx.ALIGN_CENTER|wx.ALL, intPPI(10))
         dlg.SetSizer(sizer)
@@ -14088,7 +14182,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
     def OnMenuFilesCloseLeft(self, event):
         if self.scriptNotebook.GetRowCount() > 1:
-            wx.MessageBox(_('Cannot close tabs in groups if rows count greater 1\nYou must disable multiline tab style'),'AvsPmod')
+            wx.MessageBox(_('Cannot close tabs in groups if rows count greater 1\nYou must disable Options -> Multiline tab style'),'AvsPmod')
             return
         idx = self.scriptNotebook.GetSelection()
         count = self.scriptNotebook.GetPageCount()-1
@@ -14097,12 +14191,19 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
     def OnMenuFilesCloseRight(self, event):
         if self.scriptNotebook.GetRowCount() > 1:
-            wx.MessageBox(_('Cannot close tabs in groups if rows count greater 1\nYou must disable multiline tab style'),'AvsPmod')
+            wx.MessageBox(_('Cannot close tabs in groups if rows count greater 1\nYou must disable Options -> Multiline tab style'),'AvsPmod')
             return
         idx = self.scriptNotebook.GetSelection()
         count = self.scriptNotebook.GetPageCount()-1
         for index in xrange(count,idx,-1):
             self.CloseTab(index, prompt=True)
+
+    def OnMenuFilesCloseNotOpened(self, event):
+        count = self.scriptNotebook.GetPageCount()-1
+        for index in xrange(count,-1,-1):
+            script = self.scriptNotebook.GetPage(index)
+            if script.AVI is None:
+                self.CloseTab(index, prompt=True)
 
     def OnMenuFileCloseAllTabs(self, event):
         self.CloseAllTabs()
@@ -15333,6 +15434,69 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
     def OnMenuVideoGroupClearAllTabGroups(self, event):
         self.OnGroupClearAllTabGroups(event)
+
+    def OnMenuVideoGroupChangeLeftTabGroup(self, event):
+        self.OnMenuVideoGroupChangeTabGroup(direction='left')
+
+    def OnMenuVideoGroupChangeRightTabGroup(self, event):
+        self.OnMenuVideoGroupChangeTabGroup(direction='right')
+
+    def OnMenuVideoGroupChangeTabGroup(self, event=None, direction=None):
+        group = group2 = group3 = self.currentScript.group
+        setOldGroup = group == self.oldGroup is not None
+        if direction is None:
+            if group is None:
+                if self.currentScript.AVI is None:
+                    wx.MessageBox(_('New group only for opened tabs if current group is None')) # will never shown, menu is disabled, but...
+                    return
+                hint = _("Current group is None\nThis will also assign the group to all 'opened' tabs without a group")
+                group2 = 'None'
+                group = 1
+            else:
+                hint = 'This will change all tabs with the group %s' % group
+        else:
+            if group is None:
+                group2 = 'None'
+                group = 1
+            hint = 'This will change the current and all %s tabs' % direction
+
+        dlg = wx.NumberEntryDialog(self, hint, _('Enter new group'),'Change Tab Group: %s' % group2, int(group), 1, 8)
+        ID = dlg.ShowModal()
+        val = dlg.GetValue()
+        if ID != wx.ID_OK:
+            return
+        val = str(val)
+        curIndex = self.scriptNotebook.GetSelection()
+        if direction is None:
+            for index in range(self.scriptNotebook.GetPageCount()):
+                script = self.scriptNotebook.GetPage(index)
+                if script.group == group3 is not None:
+                    script.group = val
+                    self.UpdateScriptTabname(index=index)
+                elif script.group is None and script.AVI: # if current group None assign only opened tabs
+                    self.AssignTabGroup(val, index)
+        elif direction == 'left':
+            for index in range(self.scriptNotebook.GetPageCount()):
+                script = self.scriptNotebook.GetPage(index)
+                if script.group == group3 is not None:
+                    script.group = val
+                    self.UpdateScriptTabname(index=index)
+                elif script.group != val:
+                    self.AssignTabGroup(val, index)
+                if index >= curIndex:
+                    break
+        elif direction == 'right':
+            for index in range(curIndex, self.scriptNotebook.GetPageCount()):
+                script = self.scriptNotebook.GetPage(index)
+                if script.group == group3 is not None:
+                    script.group = val
+                    self.UpdateScriptTabname(index=index)
+                elif script.group != val:
+                    self.AssignTabGroup(val, index)
+        if setOldGroup:
+            self.oldGroup = val
+        if self.splitView and self.previewWindowVisible:
+            self.videoWindow.Refresh()
 
     def OnMenuVideoGroupAssignTabGroup(self, event):
         item = self.tab_group_menu.FindItemById(event.GetId())
@@ -17709,6 +17873,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         progress.Update(100, _('Finished (%s fps average)\n*** live and let live ***') % (
                         '%#.4g' % (frame_count / elapsed_time) if elapsed_time else 'INF'))
         progress.Destroy()
+        wx.GetApp().ProcessIdle()
         return True
 
     def OnMenuVideoRunFPSAnalysis(self, event):
@@ -17754,11 +17919,13 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 if not progress.Update(frame * 100/ frame_count, _('Average %#.4g fps\nFrame %s/%s (%#.4g fps)') %   # GPo 2020
                                       (frame_read/ elapsed_time, frame, frame_count, fps))[0]:
                     progress.Destroy()
+                    wx.GetApp().ProcessIdle()
                     return False
         elapsed_time = time.time() - initial_time
         progress.Update(100, _('Finished (%s fps average)\n*** live and let live ***') % (
                         '%#.4g' % (frame_count / elapsed_time) if elapsed_time else 'INF'))
         progress.Destroy()
+        wx.GetApp().ProcessIdle()
         return True
 
     def OnMenuVideoPlay(self, event):
@@ -17964,6 +18131,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         SetFontPPI(dlg)
         vi = self.GetVideoInfoDict(clean=True)
         t_selFrames, t_selCount = countSelections('timeline')
+        isUtf8 = 'True' if script.encoding == 'utf8' else 'True with BOM' if script.encoding == 'utf-8-sig' else 'False'
 
         labels = (
             (_('Video'),
@@ -17989,6 +18157,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 (
                 (_('Bookmarks:'), '%i timeline, %i backup, %i saved' % (len(self.GetBookmarkFrameList()), len(script.bookmarks), self.OnMenuBookmarksFromScript(getOnlyCount=True))),
                 (_('Timeline selections:'), '%i frames (%.02f %%) in %i selections' % (t_selFrames, float(t_selFrames/(vi['framecount']/100.00)), t_selCount)),
+                (_('Current script UTF-8 encoded:'), '%s' % isUtf8),
                 ),
             )
         )
@@ -19375,6 +19544,9 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             if color == wx.BLACK and frame in self.titleDict and (event.ControlDown() or event.AltDown() or event.ShiftDown()):
                 del self.titleDict[frame]
         else:
+            if wx.GetKeyState(wx.WXK_CONTROL):
+                self.OnStatusBarContextMenu()
+                return
             hitlist = slider.HitTestSelection(mousepos)
             previewOK = self.previewOK()
             #~selections = self.GetSliderSelections()
@@ -19562,8 +19734,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 if previewOK:
                     if hitlist:
                         menuInfo += [_(''),]
-                    #~elif selections:
-                        #~menuInfo = [(_('Remove all'), '', OnSelectionRemoveAll, ''),]
+                    if self.fullScreenWnd_IsShown:
+                        menuInfo += [(_('Timeline range...'), '', self.OnStatusBarContextMenu, ''),]
                     menuInfo += [
                         (_('Trim editor...'), '', OnTrimEditor, ''),
                     ]
@@ -20146,6 +20318,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 group_menu.Check(id, self.options['offsetbookmarks'])
                 id = group_menu.FindItem(_('Freeze Split View frame'))
                 group_menu.Check(id, self.splitView_freeze)
+                id = group_menu.FindItem(_('Change current group...'))
+                group_menu.Enable(id, bool(script.AVI is not None or script.group is not None))
                 # reposition
                 menuItem = menu.FindItemByPosition(menu.GetMenuItemCount()-1)
                 menu2 = menuItem.GetSubMenu()
@@ -20158,7 +20332,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         self.Bind(wx.EVT_MENU, self.RepositionTab, menuItem)
                     else:
                         menuItem.Enable(False)
-                # GPo
                 item = menu.FindItemById(menu.FindItem(_('Save view pos on tab change')))
                 if item:
                     item.Check(self.saveViewPos==1)
@@ -20261,12 +20434,22 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
     def AssignTabGroup(self, group, index=None):
         if group == _('None'):
             group = None
-        current_tab = self.scriptNotebook.GetSelection()
         if index is None:
-            index = current_tab
+            index = self.scriptNotebook.GetSelection()
         script = self.scriptNotebook.GetPage(index)
         script.group = group
-        script.group_frame = script.lastFramenum
+        # old
+        #~script.group_frame = script.lastFramenum
+
+        # GPo new, pre-calc the offset if group is old group
+        # so we can set the group to None and change the frame number and assign the group new
+        if (group == self.oldGroup is not None) and isinstance(script.lastFramenum, int):
+            offset = self.oldLastFramenum - script.lastFramenum
+            script.group_frame = self.oldGroupFrame - offset
+            script.group_offset = offset # GPo new test
+        else:
+            script.group_frame = script.lastFramenum
+            script.group_offset = 0 # GPo new test
         self.UpdateScriptTabname(index=index)
 
     def OnNotebookContextMenu(self, event):
@@ -20987,23 +21170,22 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 event.Skip()
                 return
 
-            # normal fullscreen/fullsize
-            if wx.Rect(0,int50,int50, (cRect[3]-int100)//2).Contains(mousePos) and not self.fullScreenWnd.IsFullScreen():
-                self.OnLeftDClickVideoWindow(toggleFullscreen=True)
-                return
-            if wx.Rect(0,(cRect[3]-int100)//2,int50,(cRect[3]-int100)//2).Contains(mousePos) and not self.IsFullScreen():
+            # normal fullscreen/fullsize (bottom rect must check first, Why ??)
+            if wx.Rect(0, cRect[3]//2, int50, cRect[3]-int50).Contains(mousePos) and not self.IsFullScreen():
                 self.OnLeftDClickVideoWindow(toggleFullsize=True)
                 if not self.IsResizeFilterFitFill(script) and self.options['showresamplemenu'] != 0:
                     self.OnMenuVideoZoomResampleFit(zoom=1, fitHeight=True, single=False, sameSize=False)
                 return
-
-            if wx.Rect(cRect[2]-int50,int50,int50,(cRect[3]-int100)//2).Contains(mousePos) and not self.fullScreenWnd.IsFullScreen():
+            if wx.Rect(0, int50, int50, cRect[3]//2).Contains(mousePos) and not self.fullScreenWnd.IsFullScreen():
                 self.OnLeftDClickVideoWindow(toggleFullscreen=True)
                 return
-            if wx.Rect(cRect[2]-int50,(cRect[3]-int100)//2,int50,(cRect[3]-int100)//2).Contains(mousePos) and not self.IsFullScreen():
+            if wx.Rect(cRect[2]-int50, cRect[3]//2, int50, cRect[3]-int50).Contains(mousePos) and not self.IsFullScreen():
                 self.OnLeftDClickVideoWindow(toggleFullsize=True)
                 if not self.IsResizeFilterFitFill(script) and self.options['showresamplemenu'] != 0:
                     self.OnMenuVideoZoomResampleFit(zoom=1, fitHeight=True, single=False, sameSize=False)
+                return
+            if wx.Rect(cRect[2]-int50, int50, int50, cRect[3]//2).Contains(mousePos) and not self.fullScreenWnd.IsFullScreen():
+                self.OnLeftDClickVideoWindow(toggleFullscreen=True)
                 return
 
         ctrlKey = wx.GetKeyState(wx.WXK_CONTROL)
@@ -21199,6 +21381,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     if self.fullScreenWnd.IsFullScreen(): # should never be, but...
                         self.CloseFullscreenWND()
                     self.DisableResizeFilter(onlyFitFill=True) # we must reset all resizeFilter if not preview visible when changing the fullsize mode
+
             #if self.options['sdlwindowdocking'] > 0:
                 #self.OnVideoWindowSize()
             if event:
@@ -21212,78 +21395,14 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 int50 = intPPI(50)
                 cRect = self.videoWindow.GetClientRect()
                 single = wx.Rect(cRect[2]-int50,0,int50,int50).Inside(event.GetPosition()) or shiftdown
-                if single:
+                force = False if single else wx.Rect(cRect[2]-int50,cRect[3]-int50,int50,int50).Inside(event.GetPosition())
+                if single or force:
                     rf = self.currentScript.resizeFilter
                     if self.currentScript.AVI:
-                        zoom = -1 if self.currentScript.AVI.Width != self.currentScript.AVI.DisplayWidth else 2
-                        self.OnMenuVideoZoomResampleFit(zoom=zoom, fitHeight=rf[3], doScroll=shiftdown)
+                        #zoom = -1 if self.currentScript.AVI.Width != self.currentScript.AVI.DisplayWidth else 2
+                        zoom = 2 if rf[2] != 2 else -1
+                        self.OnMenuVideoZoomResampleFit(zoom=zoom, fitHeight=rf[3], single=single, doScroll=shiftdown)
                     return
-                    #~self.OnMenuVideoZoomResampleFit(zoom=2 if rf[2] != 2 else -1, fitHeight=rf[3], doScroll=shiftdown)
-                    #~self.OnMenuVideoZoomResampleFit(zoom = -1 if rf[2] != 1 else 2, fitHeight=rf[3], doScroll=shiftdown)
-                    #return
-
-            if self.zoomwindow:
-                self.zoomwindow = False
-                self.zoomwindowfill = False
-                self.zoomwindowfit = False
-                self.zoomfactor = 1
-                old_zoomfactor = 1
-            else:
-                old_zoomfactor = self.zoomfactor
-                if self.zoomfactor != 1: self.zoomfactor = 1
-                else: self.zoomfactor = 2
-
-            if self.videoWindow.HasCapture():
-                try:
-                    self.videoWindow.ReleaseMouse()  # GPo 2020, must release otherwise videoWindow moves
-                except:
-                    pass
-                self.videoWindow.SetCursor(wx.StockCursor(wx.CURSOR_DEFAULT))
-            self.videoWindow.Freeze()
-            try:
-                self.ZoomAndScroll(old_zoomfactor, self.zoomfactor)
-                if event.LeftIsDown() and not self.currentScript.AVI.IsErrorClip():
-                    videoWindow = self.videoWindow
-                    videoWindow.CaptureMouse()
-                    videoWindow.SetCursor(wx.StockCursor(wx.CURSOR_HAND))
-                    videoWindow.oldPoint = event.GetPosition()
-                    videoWindow.oldOrigin = videoWindow.GetViewStart()
-                    if self.getPixelInfo:
-                        if self.getPixelInfo == 'string':
-                            self.pixelInfo = self.GetPixelInfo(event, string_=True)
-                        else:
-                            self.pixelInfo = self.GetPixelInfo(event)
-                        self.getPixelInfo = False
-                """
-                # GPo new test
-                if self.options['resizevideowindow'] and not self.separatevideowindow: #and not self.IsFullSize():
-                    #if self.mainSplitter.GetMinimumPaneSize() > 1:
-                    self.currentScript.lastSplitVideoPos = None
-                    sash_pos = self.GetMainSplitterNegativePosition(pos=None, forcefit=True)
-                    self.mainSplitter.SetSashPosition(sash_pos)
-                """
-            finally:
-                self.TryThaw(self.videoWindow)
-        else:
-            event.Skip() # show context menu
-
-    # GPo 2018
-    def OnRightUpVideoWindow(self, event):
-        if event.LeftIsDown():
-            if self.options['showresamplemenu'] > 0: # then resample enabled
-                shiftdown = event.ShiftDown()
-                int50 = intPPI(50)
-                cRect = self.videoWindow.GetClientRect()
-                single = wx.Rect(cRect[2]-int50,0,int50,int50).Inside(event.GetPosition()) or shiftdown
-                if single:
-                    rf = self.currentScript.resizeFilter
-                    if self.currentScript.AVI:
-                        zoom = -1 if self.currentScript.AVI.Width != self.currentScript.AVI.DisplayWidth else 2
-                        self.OnMenuVideoZoomResampleFit(zoom=zoom, fitHeight=rf[3], doScroll=shiftdown)
-                    return
-                    #~self.OnMenuVideoZoomResampleFit(zoom=2 if rf[2] != 2 else -1, fitHeight=rf[3], doScroll=shiftdown)
-                    #~self.OnMenuVideoZoomResampleFit(zoom = -1 if rf[2] != 1 else 2, fitHeight=rf[3], doScroll=shiftdown)
-                    #return
 
             if self.zoomwindow:
                 self.zoomwindow = False
@@ -21486,21 +21605,56 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
     @AsyncCallWrapper
     def OnMouseMotionVideoWindow(self, event=None):
-        # show the video controls if fullscreen
-        if event and not event.LeftIsDown() and self.fullScreenWnd.IsFullScreen() and \
-                not self.fullScreenSizer.IsShown(self.videoControls) and event.GetY() > self.fullScreenWnd.GetSize()[1]-intPPI(10):
-            self.fullScreenSizer.Fit(self.videoControls)
-            self.fullScreenSizer.Show(self.videoControls)
-            self.fullScreenSizer.Layout()
-            self.fullScreenSizer.Show(self.videoControls)
-            return
+        if event and not event.LeftIsDown():
+            mPos = event.GetPosition()
+            # show the video controls if fullscreen
+            if self.fullScreenWnd.IsFullScreen() and not self.fullScreenSizer.IsShown(self.videoControls) and \
+                mPos[1] > self.fullScreenWnd.GetSize()[1]-intPPI(10):
+                    self.fullScreenSizer.Fit(self.videoControls)
+                    self.fullScreenSizer.Show(self.videoControls)
+                    self.fullScreenSizer.Layout()
+                    self.fullScreenSizer.Show(self.videoControls)
+                    return
+
+            # signal mouse action area (left and right)
+            cSize = self.videoWindow.GetClientSize()
+            int50 = intPPI(50)
+            if mPos[0] <= int50 or mPos[0] > cSize[0] - int50:
+                self.videoWindow.SetCursor(wx.StockCursor(wx.CURSOR_CLOSED_HAND))
+                if self.options['paintzoomhint']:
+                    if self.overlayData:
+                        s = self.overlayData[2]
+                    else:
+                        s = ' ' # set a space for diverence
+                    if mPos[1] < int50:
+                        s2 = 'D3D Fullscreen' if mPos[0] <= int50 else 'Resize single'
+                    elif mPos[1] < cSize[1] // 2:
+                        s2 = 'Fullscreen' if not self.fullScreenWnd.IsFullScreen() else 'Fullsize' if self.IsFullScreen() else 'Reset'
+                    elif mPos[1] < cSize[1] - int50:
+                        if self.fullScreenWnd.IsFullScreen():
+                            s2 = 'Fullsize ' # at space for difference
+                        else:
+                            s2 = 'Fullsize ' if not self.IsFullScreen() else 'Reset ' # at space for difference
+                    else:
+                        s2 = 'D3D Fullsize' if mPos[0] <= int50 else 'Resize all'
+
+                    if s != s2:
+                        self.SetOverlay(mPos[0], mPos[1], s2, 1500 if self.options['paintzoomhint'] > 1 else -1) # paint text
+            else:
+                if self.videoWindow.GetCursor() not in (wx.StockCursor(wx.CURSOR_DEFAULT), wx.StockCursor(wx.CURSOR_WAIT)):
+                    self.videoWindow.SetCursor(wx.StockCursor(wx.CURSOR_DEFAULT))
+                if self.overlayData:
+                    self.ResetOverlay()
+        else:
+            if self.overlayData:
+                self.ResetOverlay()
+
         """
         if event and event.GetX() < 5:
             self.vwToolbarSizer.Fit(self.vwToolbar)
             self.vwToolbarSizer.Layout()
             self.vwToolbarSizer.Show(self.vwToolbar)
         """
-
         if self.cropDialog.IsShown() and event and event.LeftIsDown():
             script = self.currentScript
             w = script.AVI.Width
@@ -21650,12 +21804,14 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             except:
                 pass
             self.videoWindow.SetCursor(wx.StockCursor(wx.CURSOR_DEFAULT))
+        if self.overlayData:
+            self.ResetOverlay()
         if event.LeftIsDown() and not self.cropDialog.IsShown() and \
             (self.zoomfactor != 1) and self.options['zoom_antialias']:
                 self.zoom_antialias = True
                 self.videoWindow.Refresh()
                 self.videoWindow.Update()
-                #wx.YieldIfNeeded()
+
         event.Skip()
 
     def OnLeftUpVideoWindow(self, event):
@@ -22118,6 +22274,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 group_menu.Check(id, self.options['offsetbookmarks'])
                 id = group_menu.FindItem(_('Freeze Split View frame'))
                 group_menu.Check(id, self.splitView_freeze)
+                id = group_menu.FindItem(_('Change current group...'))
+                group_menu.Enable(id, bool(script.AVI is not None or script.group is not None))
 
             x_id = win.contextMenu.FindItem(_('Save view pos on tab change')) # GPo 2020
             if x_id != wx.NOT_FOUND:
@@ -22990,8 +23148,9 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         try:
             txt = raw_txt.decode(f_encoding)
         except UnicodeDecodeError:
-            f_encoding = encoding
+            f_encoding = sys.getfilesystemencoding()
             txt = raw_txt.decode(f_encoding)
+
         if '\r' in txt:
             eol = 'crlf'
             txt = txt.replace('\r\n', '\n') # to simplify text handling on macros and avoid mixing line endings
@@ -23126,7 +23285,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         # Prompt user to save changes if necessary
         if not discard and script.GetModify():
             if prompt and not (self.options['closeneversaved'] and not script.filename):
-                #~ self.HidePreviewWindow()
                 tabTitle = self.scriptNotebook.GetPageText(index)
                 dlg = wx.MessageDialog(self, _('Save changes before closing?'),
                     tabTitle, wx.YES_NO|wx.CANCEL)
@@ -23150,7 +23308,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             script.snapShots[key] = utils.emptySnapShot
 
         script.lastFramenum = None # GPo, disable OnPageChanged
-        if self.tabChangeLoadBookmarks:
+        if self.tabChangeLoadBookmarks and script is self.currentScript:
             self.DeleteAllFrameBookmarks(bmtype=0, refreshVideo=False) # GPo new
             #self.DeleteFrameBookmark(None, refreshVideo=False, refreshProgram=False)
 
@@ -23304,7 +23462,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         return
 
             # Encode text and save it to the specified file
-            txt = self.GetEncodedText(txt, bom=False) # GPo new, bom = False
+            txt, encoding = self.GetEncodedText(script, txt, forceUtf8=False)
             try:
                 with open(filename, 'wb') as f:
                     f.write(txt)
@@ -23313,8 +23471,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 #if err.errno != 13:
                     self.StatusbarTimer_Start(5000, _('Error saving the script: %s') % filename, 2)
                     raise
-
             # Misc stuff
+            script.encoding = encoding
             if savemsg:
                 self.StatusbarTimer_Start(savemsg[0], savemsg[1], savemsg[2])
             script.SetSavePoint()
@@ -23352,8 +23510,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         if cleanToggleTags:
             text = self.cleanToggleTags(text)
         return text
-
-    def GetEncodedText(self, txt, bom=False, forceUtf8=False):
+    """
+    def GetEncodedText(self, txt, bom=False, forceUtf8=True):
         '''Prepare a script's text for saving it to file
 
         Prefer system's encoding to utf-8, just in case other applications
@@ -23361,6 +23519,9 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
         If bom == True, insert the BOM at the beginning (except for UTF-8
         without BOM on the original file)
+
+        GPo: prefer now UTF-8 without BOM
+
         '''
         script = self.currentScript
 
@@ -23370,7 +23531,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             txt = txt.replace('\n', '\r\n')
 
         if forceUtf8:
-            script.encoding = 'utf-8-sig'
+            script.encoding = 'utf8' # save without bom
             bom = False # Python writes the bom if it doesn't exist
 
         # try current encoding, else filesystem's
@@ -23398,8 +23559,10 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             bom = False # GPo 2021
             try:
                 encoded_txt = txt.encode(script.encoding)
+                encoded = True
             except UnicodeEncodeError:
                 encoded_txt = txt
+                script.encoding = sys.getfilesystemencoding()
 
         # Add BOM
         if bom:
@@ -23417,8 +23580,52 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
         #if encoded_txt.startswith(codecs.BOM_UTF8):
             #encoded_txt = encoded_txt.replace(codecs.BOM_UTF8, '', 1)
-
         return encoded_txt
+    """
+
+    def GetEncodedText(self, script, txt, forceUtf8=False):
+        '''Prepare a text for saving it to file or for Run External Player
+        Prefer system's encoding to utf-8, for my privat purpose
+        '''
+        # convert line endings to CRLF if necessary
+        if self.options['eol'] == 'force crlf' or self.options['eol'] == 'auto' and (
+                script.eol == 'crlf' or script.eol is None and os.name == 'nt'):
+            txt = txt.replace('\n', '\r\n')
+
+        if forceUtf8:
+            encoding = 'utf8'
+        else:
+            encoding = script.encoding
+
+        encoded = False
+        try:
+            encoded_txt = txt.encode(encoding)
+            encoded = True
+        except UnicodeEncodeError:
+            sys_encoding = sys.getfilesystemencoding()
+            if sys_encoding != encoding:
+                try:
+                    encoding = sys_encoding
+                    encoded_txt = txt.encode(encoding)
+                    encoded = True
+                except UnicodeEncodeError:
+                    encoded = False
+        # mbcs just replaces invalid characters
+        if encoded and encoding.lower() == 'mbcs': # windows default 16 bit unicode
+            txt2 = encoded_txt.decode(encoding)
+            if txt != txt2:
+                encoded = False
+
+        # fallback to utf-8
+        if not encoded:
+            encoding = 'utf8'
+            try:
+                encoded_txt = txt.encode(encoding)
+                encoded = True
+            except UnicodeEncodeError:
+                encoded_txt = txt
+                encoding = sys.getfilesystemencoding()
+        return encoded_txt, encoding
 
     def GetProposedPath(self, index=None, only=None, type_=None):
         r'''Return a proposed filepath for a script based on the script's filename
@@ -25721,8 +25928,10 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         if show_preview:
             self.ShowVideoFrame()
 
-    def SetScriptSplitVideoPos(self):
-        if self.options['resizevideowindow']:
+    def SetScriptSplitVideoPos(self, script=None, ignorResizeOption=None):
+        if script is None:
+            script = self.currentScript
+        if not ignorResizeOption and self.options['resizevideowindow']:
             sash_pos = None
         else:
             if self.oldLastSplitVideoPos is not None:
@@ -25730,8 +25939,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             else:
                 sash_pos = self.GetMainSplitterNegativePosition(pos=None, forcefit=True)
         self.SetMinimumScriptPaneSize()
-        self.currentScript.lastSplitVideoPos = sash_pos
-        #self.currentScript.lastSplitVideoPosShown = sash_pos
+        script.lastSplitVideoPos = sash_pos
+        #script.lastSplitVideoPosShown = sash_pos
 
     def CloseFullscreenWND(self, setMinPaneSize=False):
         if self.sdlWindow.IsFullScreen() and self.sdlWindow.IsSameMonitor():
@@ -29478,8 +29687,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
     def MakePreviewScriptFile(self, script):
         txt = self.getCleanText(script.GetText())
-        txt = self.GetEncodedText(txt, bom=True)
         txt = self.stripComment_2(txt)
+        txt, encoding = self.GetEncodedText(script, txt, forceUtf8=False)
         # Construct the filename of the temporary avisynth script
         dirname = self.GetProposedPath(only='dir')
         if os.path.isdir(dirname):
@@ -29575,6 +29784,54 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             err = 'Clip error unknown'
         wx.MessageBox(u'\n\n'.join((_('Error requesting frame {number}').format(number=frame_nr),
                            err)), _('Error'), style=wx.OK|wx.ICON_ERROR)
+
+    def ResetOverlay(self, force=True):
+        if self.overlayData:
+            try:
+                x,y,s,t = self.overlayData
+                if force or time.time() >= t:
+                    cSize = self.videoWindow.GetClientSize()
+                    self.overlayData = None
+                    xx = 18 if x < intPPI(60) else cSize[0] - 200
+                    yy = 18 if y < cSize[1]//2 else cSize[1]-26-intPPI(12)
+                    self.videoWindow.RefreshRect(wx.Rect(xx, yy, 200, yy+intPPI(14)))
+                elif t > 0:
+                    wx.CallLater(t, self.ResetOverlay, force=False)
+            except:
+                self.overlayData = None
+
+    def SetOverlay(self, x, y, text, timeout=1500):
+        if text:
+            self.ResetOverlay(force=True)
+            self.overlayData = (x, y, text, time.time()+timeout/1000 if timeout > 100 else 0)
+            self.DrawOverlay()
+            if timeout > 100:
+                wx.CallLater(timeout, self.ResetOverlay, force=False)
+
+    def DrawOverlay(self, dc=None):
+        try:
+            x,y,s,t = self.overlayData
+        except:
+            self.overlayData = None # except cant be if playback with RLock or AsyncCall is performed
+            return
+        dc = wx.ClientDC(self.videoWindow)
+        dc.SetFont(wx.Font(pointSize=intPPI(12), family=wx.FONTFAMILY_DEFAULT, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_BOLD))
+        dc.SetTextForeground(wx.YELLOW)
+        dc.SetTextBackground(wx.BLACK)
+        dc.SetBackgroundMode(wx.SOLID)
+        cSize = self.videoWindow.GetClientSize()
+        if x <= intPPI(50):
+            if y < cSize[1]//2:
+                dc.DrawText(s, 20, 20)
+            else:
+                dc.DrawText(s, 20, cSize[1]-24-intPPI(12))
+        else:
+            s = s.rstrip()
+            fw,fh = dc.GetTextExtent(s)
+            if y < cSize[1] // 2:
+                dc.DrawText(s, cSize[0] - fw -20, 20)
+            else:
+                dc.DrawText(s, cSize[0] - fw -20, cSize[1]-24-intPPI(12))
 
     # make a snapshot of the video window and paint it on thread progress dialog (wx.GetApp().SaveYieldFor)
     def GetVideoWindowBitmap(self):
@@ -29711,6 +29968,9 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             inputdc.SetUserScale(self.zoomfactor, self.zoomfactor)
             inputdc.Blit(0, 0, w, h, dc, 0, 0)
 
+        if self.overlayData:
+            self.DrawOverlay(inputdc)
+
         self.paintedframe = frame
         return True
 
@@ -29763,7 +30023,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     bmp = wx.EmptyBitmap(w,h)
                     dc.SelectObject(bmp)
                     if not script.AVI.DrawFrame(frame, dc):
-                        #self.ErrorMessage_GetFrame(script, frame)
                         AsyncCall(self.ErrorMessage_GetFrame, script, frame).Wait()
                         return None
                     self.PaintCropRectangles(dc, script)
@@ -29772,24 +30031,19 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     self.videoWindow.DoPrepareDC(inputdc)
                     inputdc.Blit(0, 0, w, h, dc, 0, 0)
                 elif self.splitView:
-                    #if not self.PaintSplitView(inputdc, frame, isPaintEvent):
                     if not AsyncCall(self.PaintSplitView, inputdc, frame, isPaintEvent).Wait():
                         return False
                 elif self.snapShotIdx > 0:
-                    #self.PaintSnapShot(inputdc, script)
                     AsyncCall(self.PaintSnapShot, inputdc, script).Wait()
                 else:
                     self.videoWindow.DoPrepareDC(inputdc)
                     if not script.AVI.DrawFrame(frame, inputdc, display_clip=display_clip):
                         AsyncCall(self.ErrorMessage_GetFrame, script, frame).Wait()
-                        #self.ErrorMessage_GetFrame(script, frame) #
                         return None
             elif self.splitView:
                 if not AsyncCall(self.PaintSplitView, inputdc, frame, isPaintEvent).Wait():
-                #if not self.PaintSplitView(inputdc, frame, isPaintEvent):
                     return False
             elif self.snapShotIdx > 0:
-                #self.PaintSnapShot(inputdc, script)
                 AsyncCall(self.PaintSnapShot, inputdc, script).Wait()
             else:
                 dc = wx.MemoryDC()
@@ -29803,7 +30057,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     dc.SelectObject(bmp)
                     if not script.AVI.DrawFrame(frame, dc):
                         AsyncCall(self.ErrorMessage_GetFrame, script, frame).Wait()
-                        #self.ErrorMessage_GetFrame(script, frame)
                         return None
                     if self.flip:
                         img = bmp.ConvertToImage()
@@ -29824,6 +30077,9 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 self.videoWindow.DoPrepareDC(inputdc)
                 inputdc.SetUserScale(self.zoomfactor, self.zoomfactor)
                 inputdc.Blit(0, 0, w, h, dc, 0, 0)
+
+            if self.overlayData:
+                AsyncCall(self.DrawOverlay).Wait()
 
             self.paintedframe = frame
             return True
@@ -30145,13 +30401,10 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             if self.zoomfactor != 1:
                 inputdc.SetUserScale(1, 1)
             inputdc.SetFont(wx.Font(pointSize=intPPI(12), family=wx.FONTFAMILY_DEFAULT, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_BOLD))
-            #fw,fh = inputdc.GetTextExtent('Snapshot 2') # when draw label filled
             inputdc.SetTextForeground(wx.YELLOW)
             if isShot == 1:
-                #inputdc.DrawLabel("Snapshot " + str(self.snapShotIdx),(x+2,y+2,x+fh+4,y+fw+4))
                 inputdc.DrawText("Snapshot " + str(self.snapShotIdx), x+2, y+2)
             else:
-                #inputdc.DrawLabel("Snapshot " + str(self.snapShotIdx),(int(xxx*self.zoomfactor)+2,y+2,int(xxx*self.zoomfactor)+fh+4,y+fw+4))
                 inputdc.DrawText("Snapshot " + str(self.snapShotIdx),int(xxx*self.zoomfactor)+2,y+2)
         return True
 
@@ -30193,16 +30446,13 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             if self.zoom_antialias == '': # wait for ResetZoomAntialias
                 return
             inputdc.SetUserScale(1, 1)
-            inputdc.SetFont(wx.Font(pointSize=12, family=wx.FONTFAMILY_DEFAULT, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_BOLD))
+            inputdc.SetFont(wx.Font(pointSize=intPPI(12), family=wx.FONTFAMILY_DEFAULT, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_BOLD))
             inputdc.SetTextForeground(wx.YELLOW)
             #inputdc.SetTextBackground(wx.BLACK)
             #inputdc.SetBackgroundMode(wx.BRUSHSTYLE_SOLID)
             inputdc.DrawLabel("Snapshot " + str(self.snapShotIdx),(x+2,y+2,x+52,y+102))
         else:
-            #dc.SetFont(wx.Font(pointSize=12, family=wx.FONTFAMILY_DEFAULT, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_BOLD))
-            #dc.SetTextForeground(wx.YELLOW)
-            #dc.DrawLabel("Snapshot " + str(self.snapShotIdx),(x+2,y+2,x+52,y+102))
-            inputdc.SetFont(wx.Font(pointSize=12, family=wx.FONTFAMILY_DEFAULT, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_BOLD))
+            inputdc.SetFont(wx.Font(pointSize=intPPI(12), family=wx.FONTFAMILY_DEFAULT, style=wx.FONTSTYLE_NORMAL, weight=wx.FONTWEIGHT_BOLD))
             inputdc.SetTextForeground(wx.YELLOW)
             #inputdc.SetTextBackground(wx.BLACK)
             #inputdc.SetBackgroundMode(wx.BRUSHSTYLE_SOLID)

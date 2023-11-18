@@ -68,8 +68,8 @@ else:
     avidll = ctypes.CDLL(path)
     FUNCTYPE = ctypes.CFUNCTYPE
 
-
-encoding = sys.getfilesystemencoding()
+sys_encoding = sys.getfilesystemencoding()
+encoding = sys_encoding
 
 weak_dict = weakref.WeakKeyDictionary()
 
@@ -348,9 +348,10 @@ class AvisynthError(Exception):
 
 class AVS_ScriptEnvironment(object):
 
-    def __init__(self, version=6):
+    def __init__(self, version=6, _encoding=encoding):
         self.cdata = avs_create_script_environment(version)
         weak_dict[self] = []
+        self.encoding = _encoding
 
     def from_param(obj):
         if not isinstance(obj, AVS_ScriptEnvironment):
@@ -401,7 +402,7 @@ class AVS_ScriptEnvironment(object):
     def get_var(self, name, type=False):
         if isinstance(name, unicode):
             # mbcs will replace invalid characters anyway
-            name = name.encode(encoding, 'backslashreplace')
+            name = name.encode(self.encoding, 'backslashreplace')
         value = AVS_Value(avs_get_var(self, name), env=self)
         if value.get_type() is None:
             raise AvisynthError("NotFound")
@@ -436,7 +437,7 @@ class AVS_ScriptEnvironment(object):
 
     def set_working_dir(self, new_dir):
         if isinstance(new_dir, unicode):
-            new_dir = new_dir.encode(encoding, 'backslashreplace')
+            new_dir = new_dir.encode(self.encoding, 'backslashreplace')
         return avs_set_working_dir(self, new_dir)
 
     def subframe(self, src, rel_offset, new_pitch, new_row_size, new_height):
@@ -448,16 +449,6 @@ class AVS_ScriptEnvironment(object):
                             new_height, rel_offsetU, rel_offsetV, new_pitchUV)
 
     def propToChar(self, key, value):
-        """ v1
-        s = func.GetPropNameValue(key, value)
-        return '[' + s + ']' if s else ''
-        """
-        """ v2
-        f = propCharDict.get(key, None)
-        if f is not None:
-            return '[' + f(value) + ']'
-        return ''
-        """
         if key in propCharDict:
             return '[' + propCharDict[key](value) + ']'
         return ''
@@ -790,16 +781,15 @@ class AVS_Clip:
     # start and count are in samples
         return avs_get_audio(self, buf, start, count)
 
-    def get_frame_audio(self, n):
-        src = self.get_frame(n)
-        vi = self.get_video_info()
+    def get_frame_audio(self, n, vi=None):
+        if not vi:
+            vi = self.get_video_info()
         if vi.has_audio():
             start = vi.audio_samples_from_frames(n)
             count = vi.audio_samples_from_frames(1)
-            buffer_size = count * vi.sample_type() * vi.audio_channels()
+            buffer_size = vi.bytes_per_audio_sample() * count
             buffer = ctypes.create_string_buffer(buffer_size)
-            return avs_get_audio(self, ctypes.addressof(buffer), max(0, start),
-                                 count) # start and count are in samples
+            return avs_get_audio(self, ctypes.addressof(buffer), max(0, start), count) # start and count are in samples
 
     def set_cache_hints(self, cachehints, frame_range):
         return avs_set_cache_hints(self, cachehints, frame_range)
@@ -962,9 +952,13 @@ class AVS_Value(object):
     def set_string(self, value, env=None):
         if self.is_defined():
             self.release()
-        if isinstance(value, unicode):
-            value = value.encode(encoding, 'backslashreplace')
         env = env or self.env
+        if env:
+            _encoding = env.encoding
+        else:
+            _encoding = encoding
+        if isinstance(value, unicode):
+            value = value.encode(_encoding, 'backslashreplace')
         if isinstance(env, AVS_ScriptEnvironment):
             weak_dict[env].append(value)
         self.cdata.type = ord('s')
@@ -973,9 +967,13 @@ class AVS_Value(object):
     def set_error(self, value, env=None):
         if self.is_defined():
             self.release()
-        if isinstance(value, unicode):
-            value = value.encode(encoding, 'backslashreplace')
         env = env or self.env
+        if env:
+            _encoding = env.encoding
+        else:
+            _encoding = encoding
+        if isinstance(value, unicode):
+            value = value.encode(_encoding, 'backslashreplace')
         if isinstance(env, AVS_ScriptEnvironment):
             weak_dict[env].append(value)
         self.cdata.type = ord('s')
