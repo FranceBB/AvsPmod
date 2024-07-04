@@ -46,8 +46,8 @@ import struct
 import utils
 import cfunc
 import gc
-
 import pyaudio
+import numpy
 import Queue as queue
 
 x86_64 = sys.maxsize > 2**32
@@ -62,7 +62,6 @@ import threading
 import time
 
 sys_encoding = sys.getfilesystemencoding()
-#encoding = 'utf8'
 #globals()['__debug__'] = True
 
 try: _
@@ -153,11 +152,20 @@ avs_audio_sample_type_dict = {
 
 # for audio format pyaudio
 avs_sample_type_dict_pyaudio = {
-    avisynth.avs.AVS_SAMPLE_INT8: pyaudio.paInt8,
+    avisynth.avs.AVS_SAMPLE_INT8: pyaudio.paUInt8,
     avisynth.avs.AVS_SAMPLE_INT16: pyaudio.paInt16,
     avisynth.avs.AVS_SAMPLE_INT24: pyaudio.paInt24,
     avisynth.avs.AVS_SAMPLE_INT32: pyaudio.paInt32,
     avisynth.avs.AVS_SAMPLE_FLOAT: pyaudio.paFloat32,
+}
+
+# for audio mixer
+avs_sample_type_to_numpy = {
+    avisynth.avs.AVS_SAMPLE_INT8: numpy.uint8,
+    avisynth.avs.AVS_SAMPLE_INT16: numpy.int16,
+    #avisynth.avs.AVS_SAMPLE_INT24: not available, bad, audio must be converted to 16bit
+    avisynth.avs.AVS_SAMPLE_INT32: numpy.int32,
+    avisynth.avs.AVS_SAMPLE_FLOAT: numpy.float32,
 }
 
 # for testing
@@ -169,20 +177,21 @@ def AvsReloadLibrary():
         raise ValueError("Fatal Error: Cannot load avisynth.dll")
     return True
 
-def GetEncoding(txt):
+def GetEncoding(txt, force_utf8):
     if isinstance(txt, unicode):
-        try:
-            s = txt.encode(sys_encoding)
-            if s.decode(sys_encoding) == txt:
-                return sys_encoding
-        except:
-            pass
+        if not force_utf8:
+            try:
+                s = txt.encode(sys_encoding)
+                if s.decode(sys_encoding) == txt:
+                    return sys_encoding
+            except:
+                pass
         return 'utf8'
     return sys_encoding
 
 # for e.g. analysis pass
 class AvsSimpleClipBase:
-    def __init__(self,  script, filename='', workdir='', env=None):
+    def __init__(self,  script, filename='', workdir='', env=None, forceUtf8=False):
         self.initialized = False
         self.env = None
         self.parent_env = env
@@ -195,7 +204,7 @@ class AvsSimpleClipBase:
             if isinstance(script, avisynth.AVS_Clip):
                 raise ValueError("env must be defined when providing a clip")
             try:
-                env = avisynth.AVS_ScriptEnvironment(6, GetEncoding(script))
+                env = avisynth.AVS_ScriptEnvironment(6, GetEncoding(script, forceUtf8))
             except OSError: # only on OSError
                 return
             except:
@@ -275,7 +284,7 @@ class AvsClipBase:
                  fitWidth=None, oldFramecount=240, display_clip=True, reorder_rgb=False,
                  matrix=['auto', 'tv'], interlaced=False, swapuv=False, bit_depth=None,
                  callBack=None, readmatrix=None, displayFilter=None, readFrameProps=False,
-                 resizeFilter=None, previewFilter=None, useSplitClip=False, audioVolume=0):
+                 resizeFilter=None, previewFilter=None, useSplitClip=False, audioVolume=1.0):
 
         def CheckVersion(env):
             try:
@@ -368,9 +377,13 @@ class AvsClipBase:
         self.IsSplitClip = False
         self.split_clip_arg = ''
         self.split_clip_filterarg = ''
+        self.last_display_clip = None
+        self.last_display_args = ''
+        self.last_clip = None
         oldFramecount = max(1, oldFramecount)
-        self.prefetchRGB32 = self.app.options['prefetchrgb32']  # Prefetch(1,1) RGB32 conversion
+        self.prefetchRGB32 = app.options['prefetchrgb32']  # Prefetch(1,1) RGB32 conversion
         self.fastYUV420toRGB32 = app.options['yuv420torgb32fast'] and not app.options['fastyuvautoreset']
+        self.fast_preview_filter = app.options['fastpreviewfilter']
         self.IsDecoderYUV420 = False  # True if function DecodeYUVtoRGB exists
         # audio scrubbing
         self.pyaudio = None
@@ -378,6 +391,7 @@ class AvsClipBase:
         self.PlayAudio = self.app.options['audioscrub']
         self.audio_frames_buffered = self.app.options['audioscrubcount']
         self.downMix_d = self.app.options['downmixaudio'] # downmix the display clip
+        self.audioCenterMix = self.app.options['audiocentermix']
         self.audioVolume = audioVolume
         self.AudioThread = threading.Thread()
         self.lastAudiochannels = None  # store it
@@ -385,6 +399,7 @@ class AvsClipBase:
         self.lastAudiorate = None      # store it
         self.evAudioStop = threading.Event()
         self.evAudioFinished = threading.Event()
+        self.numpy_type = None
 
         # Create the Avisynth script clip
         if env is not None:
@@ -395,7 +410,7 @@ class AvsClipBase:
                 raise ValueError("env must be defined when providing a clip")
             # set the script encoding
             try:
-                env = avisynth.AVS_ScriptEnvironment(6, GetEncoding(script))
+                env = avisynth.AVS_ScriptEnvironment(6, GetEncoding(script, self.app.options['force_avisynth_utf8']))
             except OSError: # only on OSError
                 return
             except:
@@ -635,6 +650,7 @@ class AvsClipBase:
         self.IsAudioInt = not self.IsAudioFloat
         self.HasAudio = vi.has_audio()
 
+        """
         ## Test audio, last settings are stored  (do not kill and create the audio always)
         if not self.downMix_d: # if not display clip downmix create the audio here else on create display clip
             if not self.PlayAudio or not self.HasAudio:
@@ -643,6 +659,7 @@ class AvsClipBase:
                 if (self.lastAudiochannels != vi.nchannels) or (self.lastSampletype != vi.sample_type) or \
                     (self.lastAudiorate != vi.audio_samples_per_second):
                         self._createAudio(vi)
+        """
 
     # self.KillAudio is here to late... error (some vars deleted)
     # found no event in python that is called before freeing with None
@@ -653,15 +670,16 @@ class AvsClipBase:
             self.display_frame = None
             self.src_frame = None
             self.display_clip = None
+            self.last_display_clip = None
             self.yv12_clip_parent = None
             self.yv12_clip = None
             self.split_clip = None
             self.arg1_split_clip = None
+            self.last_clip = None # clip pointer for fast preview filter (if last_clip is clip then display_clip = last_display_clip)
             self.clip = None
             self.main_clip = None
             self.initialized = False
             self.properties = ''
-            #self.env.set_var("avsp_filter_clip", None)
             self.env = None # kill the env, I see no differnce in performance
             del self.evAudioStop
             if bool(__debug__):
@@ -859,46 +877,9 @@ class AvsClipBase:
             if self.displayFilter:
                 args = self.displayFilter + '\n'
 
-            # Test audio downmix to 2 channels if self.downMix_d
-            # Downmix is on CreateFilterClip (avsp_filter) disabled (speed up).
+            # audio downmix to 2 channels if self.downMix_d
             if self.downMix_d and self.vi.has_audio():
-
-                if self.vi.nchannels >= 8:
-                    args += (
-                          'a = ConvertAudioToFloat()\n'
-                          'flr = Getchannel(a, 1, 2, 3, 4)\n'
-                          'blr = Getchannel(a, 5, 6)\n'
-                          'slr = Getchannel(a, 7, 8)\n'
-                          'sur = MixAudio(blr, slr, 1.0, 1.0)\n'
-                          'mc = mergechannels(flr, sur)\n'
-                          'flr = GetChannel(mc, 1, 2)\n'
-                          'fcc = GetChannel(mc, 3, 3)\n'
-                          'lrc = MixAudio(flr, fcc, 0.3694, 0.2612)\n'
-                          'blr = GetChannel(mc, 5, 6)\n'
-                          'MixAudio(lrc, blr, 1.0, 0.3694)\n'
-                          )
-                elif self.vi.nchannels >= 6:
-                    args += (
-                            'flr = GetChannel(1, 2)\n'
-                            'fcc = GetChannel(3, 3)\n'
-                            'lrc = MixAudio(flr, fcc, 0.3694, 0.2612)\n'
-                            'blr = GetChannel(5, 6)\n'
-                            'MixAudio(lrc, blr, 1.0, 0.3694)\n'
-                            )
-                elif self.vi.nchannels >= 4:
-                    args += (
-                            'flr = GetChannel(1, 2)\n'
-                            'blr = GetChannel(3, 4)\n'
-                            'MixAudio(flr, blr, 0.5, 0.5)\n'
-                            )
-                elif self.vi.nchannels == 3:
-                    args += (
-                            'flr = GetChannel(1, 2)\n'
-                            'fcc = GetChannel(3, 3)\n'
-                            'MixAudio(flr, fcc, 0.5858, 0.4142)\n'
-                            )
-                if self.audioVolume != 0:
-                    args += 'AmplifyDB(%i)\n' % (self.audioVolume)
+                args += self.get_audio_downmix_args()
 
             # at last the resize filter if prefetch is used
             if self.resizeFilter:
@@ -938,18 +919,19 @@ class AvsClipBase:
         self.vi_d = vi
         self.DisplayWidth = vi.width
         self.DisplayHeight = vi.height
+        self.numpy_type = avs_sample_type_to_numpy.get(vi.sample_type, None) if vi.has_audio() else None
 
         if vi.num_frames != self.Framecount:
             err = "Display filter error: Display-Clip length different"
             return self.CreateErrorClip(err=err, display_clip_error=True)
 
         ## audio, last settings are stored  (so we do not kill and create the audio always)
-        if not self.PlayAudio or not vi.has_audio():
+        if not self.PlayAudio or not vi.has_audio() or (self.downMix_d and not self.numpy_type):
             err = _killaudio()
             if err is not None:
                 return self.CreateErrorClip(err=err, display_clip_error=True)
-        elif self.PlayAudio and vi.has_audio():
-            if (self.lastAudiochannels != vi.nchannels) or (self.lastSampletype != vi.sample_type) or \
+        elif self.PlayAudio and vi.has_audio() and (self.numpy_type or not self.downMix_d):
+            if (not self.downMix_d and (self.lastAudiochannels != vi.nchannels)) or (self.lastSampletype != vi.sample_type) or \
                 (self.lastAudiorate != vi.audio_samples_per_second):
                     err = _killaudio()
                     if err is not None:
@@ -968,21 +950,6 @@ class AvsClipBase:
             self.callBack('displayerror', self.convert_to_rgb_error)
         return True
 
-    # test not used
-    """
-    def GetD3DDisplayClip(self, convertBits=False):
-        if self.vi.Is420():
-            if self.bits_per_component == 8:
-                self.YUV420P8clip = self.clip
-                return self.clip, True
-            if convertBits:
-                self.YUV420P8clip = self.env.invoke("Eval", [self.clip, 'ConvertBits(8)'])
-                if isinstance(self.YUV420P8clip, avisynth.AVS_Clip):
-                    return self.YUV420P8clip, True
-        self.YUV420P8clip = None
-        return self.display_clip, False
-    """
-
     #################
     # Audio scrubbing
     #################
@@ -995,18 +962,16 @@ class AvsClipBase:
         if count is None:
             count = self.audio_frames_buffered
 
-        if self.preview_filter:
-            if self.audio_stream:
-                self.KillAudio()
-            return self.audio_stream is not None
         if not create_or_kill:
             return self.audio_stream is not None
+
         if self.downMix_d:
             if self.error_message or not isinstance(self.display_clip, avisynth.AVS_Clip):
                 return self.audio_stream is not None
             vi = self.vi_d
         else:
             vi = self.vi
+
         if enable:
             self.audio_frames_buffered = count
             if not self.audio_stream:
@@ -1051,6 +1016,7 @@ class AvsClipBase:
                  self.audio_stream.stop_stream()
 
     # needed after setting the downmix enabled/disabled
+    # 24bit audio must be converted to 16bit, so we must create a new display clip as long I found no other fast convert solution
     def ResetAudio(self, downmix):
         if not self.StopAudioPlay():
             return
@@ -1073,8 +1039,12 @@ class AvsClipBase:
                     clip.get_audio(buf_cptr, samples_count*nextFrame, samples_count*3)
                     if clip.get_error() or self.evAudioStop.isSet():
                         break
-                    buf = audioBuf[:]
-                    q.put_nowait(buf[:])
+                    if self.downMix_d:
+                        buf = cfunc.MixAudioToStereo(audioBuf, self.vi.nchannels, self.numpy_type, cdb=self.audioCenterMix, db=self.audioVolume)
+                        q.put_nowait(buf[:])
+                    else:
+                        q.put_nowait(audioBuf[:])
+
                     if timeout > 0:
                         nextFrame = q2.get(timeout=timeout)
                         if nextFrame < 0 or self.evAudioStop.isSet():
@@ -1097,7 +1067,12 @@ class AvsClipBase:
                         buf_cptr = ctypes.addressof(audioBuf)
                     clip.get_audio(buf_cptr, samples_count*frame, samples_count)
                     if not self.evAudioStop.isSet() and not clip.get_error():
-                        self.audio_stream.write(audioBuf, samples_count)
+                        if self.downMix_d:
+                            buf = cfunc.MixAudioToStereo(audioBuf, vi.nchannels, self.numpy_type, cdb=self.audioCenterMix, db=self.audioVolume)
+                            self.audio_stream.write(buf, samples_count)
+                            del buf
+                        else:
+                            self.audio_stream.write(audioBuf, samples_count)
                     del audioBuf
                 except:
                     pass
@@ -1133,11 +1108,10 @@ class AvsClipBase:
                             buf = q.get_nowait()
                         except:
                             break
-                        if len(buf) == buf_size:
-                            try:
-                                self.audio_stream.write(frames=buf, num_frames=samples_count * 3)
-                            except IOError:
-                                break
+                        try:
+                            self.audio_stream.write(frames=buf, num_frames=samples_count * 3)
+                        except IOError:
+                            break
                         del buf
                         if not self.evAudioStop.isSet() and loops > 2:
                             nextFrame += 3
@@ -1161,12 +1135,16 @@ class AvsClipBase:
                     return
                # audio_frames_buffered must be always mod 3 or only 1 for one frame
                 loops = int(self.audio_frames_buffered/3) if not frame_count else int(frame_count/3)
+                """
                 if self.downMix_d:
                     clip = self.display_clip
                     vi = self.vi_d
                 else:
                     clip = self.clip
                     vi = self.vi
+                """
+                clip = self.display_clip
+                vi = self.vi_d
                 self.evAudioStop.clear()
                 self.evAudioFinished.clear()
                 self.AudioThread = threading.Thread(target=_playaudio, args=(clip, vi, frame, loops, self.evAudioFinished,))
@@ -1185,16 +1163,16 @@ class AvsClipBase:
                 self.pyaudio = pyaudio.PyAudio()
                 try:
                     self.audio_stream = self.pyaudio.open(format=sample_type,
-                        channels=vi.nchannels,
+                        channels=2 if self.downMix_d else vi.nchannels,
                         rate=vi.audio_samples_per_second,
-                        frames_per_buffer=1024, #min(max(vi.audio_samples_from_frames(1), 1024), 2048),
+                        frames_per_buffer=1024,
                         output=True)
                 except:
                     self.audio_stream = None
                     self.pyaudio.terminate()
                     self.pyaudio = None
                     return
-                self.lastAudiochannels = vi.nchannels
+                self.lastAudiochannels = 2 if self.downMix_d else vi.nchannels
                 self.lastSampletype = vi.sample_type
                 self.lastAudiorate = vi.audio_samples_per_second
                 return True
@@ -1222,11 +1200,9 @@ class AvsClipBase:
         return cfunc.CreateFastClip(self, scripttxt, useSplitClip, previewFilter, matrix, readmatrix, interlaced, swapuv, bit_depth)
 
     def CreateFilterClip(self, f_args=''):
-        if self.audio_stream:
-            if not self.KillAudio():
-                return
-        #self.fastYUV420toRGB32 = False
-        return cfunc.CreateFilterClip(self, f_args)
+        if not self.StopAudioPlay():
+            return
+        return cfunc.CreateFilterClip(self, f_args, self.fast_preview_filter)
 
     # this calls now only avsp
     def KillFilterClip(self, createDisplayClip=True):
@@ -1300,6 +1276,13 @@ class AvsClipBase:
             return self.env.props_get_picture_type(self.src_frame)
         return ''
 
+    def GetFramePropValue(self, key, nr=None):
+        if self.initialized and self.can_read_avisynth_props:
+            if nr and not self._GetFrame(nr): # it's not threaded !
+                return ''
+            return self.env.props_get_value(self.src_frame, key)
+        return ''
+
     # Only switch readFrameProps on/off here, do not set AVI.readFrameProps = True
     def SetReadFrameProps(self, enabled, callBack=True, readNow=True):
         if not self.initialized or not self.can_read_avisynth_props:
@@ -1362,7 +1345,6 @@ class AvsClipBase:
                 frame = self.Framecount - 1
                 if self.current_frame == frame:
                     return True
-
             # Original clip
             self.src_frame = self.clip.get_frame(frame)
             if self.clip.get_error():
@@ -1407,6 +1389,11 @@ class AvsClipBase:
             return True
         return False
 
+    def get_audio_downmix_args(self):
+        if self.vi.sample_type == avisynth.avs.AVS_SAMPLE_INT24: # numpy cannot work with 24bit
+            return 'ConvertAudioTo16Bit()\n'
+        return ''
+
     def CreateYV12Clip(self, force):
         if self.clip and self.yv12_clip_parent is self.clip:
             return True
@@ -1422,6 +1409,10 @@ class AvsClipBase:
                 args += '\nConvertToYV12()'
         elif not self.IsYV12:
             args = '\nConvertToYV12()'
+
+        if self.downMix_d and self.vi.has_audio():
+            args += self.get_audio_downmix_args()
+
         if args:
             try:
                 self.yv12_clip = self.env.invoke('Eval', [self.clip, args])
@@ -1442,7 +1433,7 @@ class AvsClipBase:
     def GetPixelYUV(self, x, y):
         # if a resize filter used in the preview filter. CRASH if not check here
         if (self.DisplayWidth != self.Width) or (self.DisplayHeight != self.Height):
-            return (-1,-1,-1)
+            return (None,None,None)
         if self.IsPlanar:
             indexY = x * self.component_size + y * self.pitch
             # IsY8 does not detect Y10..Y16,Y32
@@ -1466,7 +1457,7 @@ class AvsClipBase:
             indexU = 4*(x/2) + 1 + y * self.pitch
             indexV = 4*(x/2) + 3 + y * self.pitch
         else:
-            return (-1,-1,-1)
+            return (None,None,None)
         if self.bits_per_component == 8:
             return (self.ptrY[indexY], self.ptrU[indexU], self.ptrV[indexV])
         if self.bits_per_component <= 16:
@@ -1491,7 +1482,7 @@ class AvsClipBase:
     def GetPixelYUVA(self, x, y):
         # if a resize filter used in the preview filter. CRASH if not check here
         if (self.DisplayWidth != self.Width) or (self.DisplayHeight != self.Height):
-            return (-1,-1,-1,-1)
+            return (None,None,None,None)
         indexY = indexA = x * self.component_size + y * self.pitch
         x = x >> self.WidthSubsampling
         y = y >> self.HeightSubsampling
@@ -1523,7 +1514,7 @@ class AvsClipBase:
         if self.IsRGB:
             # if a resize filter used in the preview filter. CRASH if not check here
             if (self.DisplayWidth != self.Width) or (self.DisplayHeight != self.Height):
-                return (-1,-1,-1)
+                return (None,None,None)
             if self.IsPlanar: # plane order is GBR
                 index = x * self.component_size + y * self.pitch
                 if self.component_size == 1: # 8bit
@@ -1578,12 +1569,12 @@ class AvsClipBase:
                     indexB = indexR + 2
                 return (self.ptrY[indexR], self.ptrY[indexG], self.ptrY[indexB])
 
-        return (-1,-1,-1)
+        return (None,None,None)
 
     def GetPixelRGBA(self, x, y, BGR=True):
         # if a resize filter used in the preview filter. CRASH if not check here
         if (self.DisplayWidth != self.Width) or (self.DisplayHeight != self.Height):
-            return (-1,-1,-1,-1)
+            return (None,None,None,None)
         if not self.IsPlanarRGBA:
             if self.IsRGB32:
                 bytes = self.vi.bytes_from_pixels(1)
@@ -1622,7 +1613,7 @@ class AvsClipBase:
                     valA = struct.unpack('=H', bytearray(bufferA))[0]
                 return (valR, valG, valB, valA)
             else:
-                return (-1, -1, -1, -1)
+                (None,None,None,None)
         else:
             # plane order is GBR
             index = x * self.component_size + y * self.pitch
@@ -1840,13 +1831,14 @@ class AvsClipBase:
             factorHeight = float(dh) / vH
             if fitHeight or factorWidth >= factorHeight:
                 H = int(float(dh)/mod)*mod
-                W = round(float(H)*ratio/mod)*mod
+                W = int(round(float(H)*ratio/mod))*mod
                 if fitHeight and not hidescrollbars and W > dw:
-                    H -= utils.GetScrollbarMetric_X() - 2
-                    H = int(float(H)/mod)*mod
-                    W = round(float(H)*ratio/mod)*mod
+                    H -= utils.GetScrollbarMetric_X()
+                    H = float(H)/mod*mod
+                    W = int(round(H*ratio/mod))*mod
+                    H = int(H)
             else:
-                W = round(float(dw)/mod)*mod
+                W = int(round(float(dw)/mod))*mod
                 H = int(float(W)/ratio/mod)*mod
         else:
             W = round(vW* zoom) //mod*mod
@@ -1988,35 +1980,6 @@ if os.name == 'nt':
 
         def GetMatrix(self):
             return AvsClipBase.GetMatrix(self)
-
-        """ Old
-        def _ConvertToRGB(self):
-            if not self.IsRGB32: # bug in avisynth v2.6 alphas with ConvertToRGB24
-                args = [self.display_clip, self.matrix, self.interlaced]
-                try:
-                    self.display_clip = self.env.invoke("ConvertToRGB32", args)
-                except:
-                    err = str(self.env.get_error())
-                    if err:
-                        self.convert_to_rgb_error = err + '\nTrying alternative RGB32 conversion'
-                    else:
-                        self.convert_to_rgb_error = 'Unknown convert to RGB32 error\n Trying alternative RGB32 conversion'
-
-                    interlaced = 'True' if self.interlaced else 'False'
-                    args = 'ConvertToYUV444(matrix="%s", interlaced=%s, ChromaInPlacement="left")\n' % (self.matrix, interlaced) + \
-                           'ConvertToRGB32(matrix="%s", interlaced=%s)' % (self.matrix, interlaced)
-                    try:
-                        self.display_clip = self.env.invoke('Eval', [self.display_clip, args])
-                    except avisynth.AvisynthError as err:
-                        if self.convert_to_rgb_error:
-                            self.convert_to_rgb_error += '\nAttempt failed !'
-                        return False
-                    if not isinstance(self.display_clip, avisynth.AVS_Clip):
-                        if self.convert_to_rgb_error:
-                            self.convert_to_rgb_error += '\nAttempt failed !'
-                        return False
-            return True
-        """
 
         def _ConvertToRGB(self, vi, prefetch=''):
             if not vi.is_rgb32():

@@ -2,6 +2,7 @@ import string
 import re
 import os
 import os.path
+import shutil
 import stat
 import sys
 import subprocess
@@ -46,6 +47,8 @@ class CompressVideoDialog(wx.Dialog):
         self.bitrateDialog = BitrateCalcDialog(self, defaultdir=os.path.dirname(inputname))
         self.SetDefaultValues()
         self.Bind(wx.EVT_CLOSE, self.OnClose)
+        x,y = self.options.get('pos', (None, None))
+        if x and y: self.SetPosition(wx.Point(x, y))
 
     def LoadOptions(self):
         self.options = {}
@@ -66,6 +69,7 @@ class CompressVideoDialog(wx.Dialog):
         self.options['audio_compress'] = self.bitrateDialog.ctrlDict['audio_compress'].GetValue()
         self.options['audio_bitrate'] = self.bitrateDialog.ctrlDict['audio_bitrate'].GetValue()
         self.options['audio_format'] = self.bitrateDialog.ctrlDict['audio_format'].GetStringSelection()
+        self.options['pos'] = self.GetPosition()
         # Delete unused exe options
         deleteList = []
         for exeName, exeDict in self.options['exe_options'].items():
@@ -78,15 +82,21 @@ class CompressVideoDialog(wx.Dialog):
         cPickle.dump(self.options, f, protocol=0)
         f.close()
 
+    # Thanks to @silverbacknet for the idea of default presets
     def LoadPresets(self):
         self.presets = {}
         self.presetKeys = []  # keep separate list to preserve order
-        filenames = os.listdir(self.GetParent().toolsfolder)
+        toolsfolder = self.GetParent().toolsfolder
+        filenames = os.listdir(toolsfolder)
         filenames.sort()
         for filename in filenames:
             base, ext = os.path.splitext(filename)
+            if ext.lower() == '.default' and base not in filenames:
+                shutil.copy2(os.path.join(toolsfolder, filename),os.path.join(toolsfolder, base))
+                filename = base
+                base, ext = os.path.splitext(filename)
             if ext.lower() == '.presets':
-                f = open(os.path.join(self.GetParent().toolsfolder, filename), 'r')
+                f = open(os.path.join(toolsfolder, filename), 'r')
                 lines = f.readlines()
                 f.close()
                 encoderName = os.path.basename(base)
@@ -467,7 +477,10 @@ class CompressVideoDialog(wx.Dialog):
         return commandline
 
     def SetValidControls(self):
-        raw_commandline = self.presets[self.ctrlDict['preset'].GetStringSelection()]
+        try:
+            raw_commandline = self.presets[self.ctrlDict['preset'].GetStringSelection()]
+        except KeyError:
+            raw_commandline = self.presets[self.ctrlDict['preset'].GetString(0)]
         for key in ('video_bitrate', 'video_bitrate_k','video_quality', 'credits_frame', 'par_x', 'par_y', 'video_input', 'video_output'):
             if key == 'video_bitrate_k':  # GPo, fix for ffmpeg
                 key = 'video_bitrate'
