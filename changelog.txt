@@ -38,6 +38,56 @@ If, for example, there is a '-' in the file name of the dll, AvsPmod will report
 please rename this dll and replace the '-' with a '_'
 
 --------------------------
+Version 2.7.8.0 - 2.7.8.1 [2024-09-01]
+--------------------------
+* The reason for this version 2.7.8.1 is that due to the new bookmark handling some macros no longer work properly, 
+- instead of changing all macros the problem was fixed in this version. Sorry.
+* Added automatic loading of the function 'LocateFrames'. 
+- if the function 'LocateFrames' is not found when executing 'Locate frame', it is imported from the specified file. 
+- Program options > Path > 'Function LocateFrames import'.
+* 2.7.8.0
+* Bookmarks handling reworked. There should be no more incorrect assignments.
+* Loading sessions and files has been reworked and should now be faster (Dogway?, for me 200 scripts 10sec).
+* Improved Tablist update: If the tab list is visible, the entries should now always be up-to-date (bookmark count is only on show and tab change updated).
+* Tablist Execute menu: added Separator and Submenu. Use '-' for an separator and '>Name of menu' for indicate to put the next entrie in this submenu, indication of end is <
+- example: Save script|File -> Save script, >My Submenu, Bookmarks to script|Video -> Bookmarks -> Bookmarks to script, <, next entrie in main context menu 
+* Added to 'Script Selector' context menu:
+- 'Search in scripts...', searches in all scripts for the given text (good for finding functions that you have used before).
+- 'Find only new from avs...' searches for new scripts (names) that are not present in the data and does not update other scripts.
+- Edit > 'Search in Notes...', searches in all Notes for the given text.
+- Edit > 'Change note...', now with multiselection and @ linked tabs.
+- Options & Additional > 'Selections distribute all', distributes all values (script, markers, note) from this entrie to all entries with the same file (path,name).
+* 'Script Selector' can now show the saved scripts (double click Path or -20 pixel Name). You can copy the text but the script cannot be saved.
+- for this function there is also an option Option & Additional > 'Same size on showing scripts'
+- note: linked @tabs processes the linked entries. If you delete the link, the linked entry will also be deleted.
+* The Trim Editor got a context menu and can now save/restore it's position and can be made transparent (Hold down the left mouse button and move to the left or right).
+- known bug: if the AvsPmod option 'Always on top' is set, the trim editor is overlaid by the program window. (no fix at the moment).
+* Added to MediaInfo context menu 'Auto close' 
+* Function 'Locate Frame' revised:
+- no more variables or selections required (optional but possible) always the next script (the right one) is used for finding the frame.
+- there is now an dialog for start, stop, threshold and 'Split View freeze frame' settings. 
+- more in the 'Locate Frame' readme.
+* Fixed: The tab's reactions became slower when many files were open (>100) and no multiline tab style and tab images were enabled.
+* Bugfix Macro 'PreviewEncode.py': The encoded clips were entered twice in the script. 
+* Some other changes.
+
+--------------------------
+Version 2.7.7.9 [2024-08-11]
+--------------------------
+* Another update for the 'Script Selector': Added to context menu Options & Aditional > 'Find dups', 'Find dups (dif) and 'Find dups (same tab)'. 
+- 'Find dups' shows all duplicate entries and 'Find dups (dif)' only duplicate entries with different script text. 'Find dups (same tab)' shows duplicates if the entries in the same tab.
+- '@ dups' tabs are read-only, but the entries referred to the other tabs can be updated with 'Update selection from avs'.
+- and a double click on an entry in the '@ dups' tab opens the linked tab.
+* Removed del protection from the 'Script Selector' search tabs (this was not the intention, only the entries should be protected against deletion) ,)
+* Who uses AvsPThumb: In the 'Script Selector' several list entries can now be opened at once (multi selection) with AvsPThumb.
+* Bugfix: On closing the 'Script Selector' the application loses the focus.
+* Bugfix Tablist: Error avsp.pyo line 4931 in OnGetItemTextColour: invalid item index in GetItemState.
+* Bugfix 'Separate Video Window': Trim Editor error and zoom fit/fill fixed.
+* Added some voices in the sound directory (They can be exchanged, only the name must be the same).
+- if you do not like it, remove the sound directory or the voice file. But I find it more pleasant than a Bell without a hint or a MessageBox when it is not needed.
+- there won't be come many.
+
+--------------------------
 Version 2.7.7.8 [2024-08-03]
 --------------------------
 * Added directory 'sound' in the program folder. Please unzip it into the AvsPmod folder if you do not unzip everything.
