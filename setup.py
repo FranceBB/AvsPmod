@@ -182,10 +182,10 @@ data_files = [
             'readme_FullscreenZoom.txt',
             'readme_D3D_Window.txt',
             'readme_Audio.txt',
-	    'readme_ScriptSelector.txt',
-	    'readme_Tablist.txt',
+	        'readme_ScriptSelector.txt',
+	        'readme_Tablist.txt',
             'license_cpuid',
-	    'DecodeYUVtoRGB.dll',
+	        'DecodeYUVtoRGB.dll',
             'SDL2.dll'
             ]
         ),
