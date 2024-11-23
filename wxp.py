@@ -1478,9 +1478,9 @@ class OptionsDialog(wx.Dialog):
                         # button with an associated handler
                         # misc: {width, handler}
                         width = misc['width'] if 'width' in misc else -1
-                        handler = misc['handler']
                         ctrl = wx.Button(tabPanel, wx.ID_ANY, size=(width,-1), label=label)
-                        self.Bind(wx.EVT_BUTTON, handler, ctrl)
+                        if 'handler' in misc:
+                            self.Bind(wx.EVT_BUTTON, misc['handler'], ctrl)
                         if tip:
                             ctrl.SetToolTipString(tip)
                         itemSizer = wx.BoxSizer(wx.VERTICAL)
@@ -1542,6 +1542,13 @@ class OptionsDialog(wx.Dialog):
                         label_position = misc['label_position'] if 'label_position' in misc else wx.HORIZONTAL
                         staticText = wx.StaticText(tabPanel, wx.ID_ANY, label)
                         ctrl = wx.TextCtrl(tabPanel, wx.ID_ANY, size=(width,-1), value=optionsValue)
+                        if 'txt_handler' in misc:
+                            ctrl.Bind(wx.EVT_TEXT, misc['txt_handler']) # text changed event
+                        if 'get_ctrl' in misc:
+                            try:
+                                wx.CallAfter(misc['get_ctrl'], ctrl) # get the ctrl itself
+                            except:
+                                pass
                         if tip:
                             staticText.SetToolTipString(tip)
                             ctrl.SetToolTipString(tip)
