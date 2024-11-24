@@ -96,7 +96,7 @@ def GetTransferName(idx):
     14: '2020_10',
     15: '2020_12',
     16: 'st2084',
-    17: '428-1"
+    17: '428-1",
     18: 'std-b67'
     }
     if idx in namedict.keys():
