@@ -39,6 +39,20 @@ If, for example, there is a '-' in the file name of the dll, AvsPmod will report
 please rename this dll and replace the '-' with a '_'
 
 --------------------------
+Version 2.7.8.8 [2024-11-16] GPo
+--------------------------
+* The selected tab shows now an image with blue sign #
+* New macro monster 'TopazEncode.py' for AvsPmod 2.7.8.8 and later (Help > 'Video tutorials & more'), more info in the macro itself.
+* Added macro type 'button' the event is the first default value, more in the macro readme.
+* Added to macro function GetTextEntry the parameter 'getControls'
+- returns the dlg itself and the insertet controls in a dict with tuple values and int key numbers, more in the macro readme. 
+* Bugfix Script Selector: a 'key error' may occur when closing the script. 
+* Bugfix: RunExternalPlayer (macro: Preview from current point)
+* Bugfix: when macros showing MsgBox with 'Cancel' button, the result was always False.
+* Bugfix: MediaInfo window when auto close was turned on an error could occur.
+* Some small fixes.
+
+--------------------------
 Version 2.7.8.7 [2024-10-18] GPo
 --------------------------
 * The editor and the tabs have been given a new context menu entry. 'Preload script':

@@ -199,9 +199,11 @@ class AvsSimpleClipBase:
         self.error_message = None
         if env is not None:
             if not isinstance(env, avisynth.AVS_ScriptEnvironment):
+                self.error_message = "env must be a PIScriptEnvironment or None"
                 raise TypeError("env must be a PIScriptEnvironment or None")
         else:
             if isinstance(script, avisynth.AVS_Clip):
+                self.error_message = "env must be defined when providing a clip"
                 raise ValueError("env must be defined when providing a clip")
             try:
                 env = avisynth.AVS_ScriptEnvironment(6, GetEncoding(script, forceUtf8))

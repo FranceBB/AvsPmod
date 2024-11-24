@@ -5282,6 +5282,7 @@ class TabList(wx.Dialog):
                             self.nb.SetSelection(i)
                         finally:
                             self.nb.Enable(True)
+                            self.app.UpdateTabImages()
                             self.nb.Update()
                             re = self.nb.GetSelection()
                             if re != i and self.listCtrl.oldIdx > -1:
@@ -5862,7 +5863,7 @@ class ScriptSelector(wx.Dialog):
         if event and show and self.sizer.IsShown(self.textCtrl):
             self.options['dimensions2'] = self.GetRect()
             if self.options['dimensions2'] != self.options['dimensions']:
-                if self.options['samesize']: # then do not move the window set only size back
+                if self.options['samescriptsize']: # then do not move the window set only size back
                     self.options['dimensions'][0] = self.options['dimensions2'][0]
                     self.options['dimensions'][1] = self.options['dimensions2'][1]
                 self.SetTransparent(0)
@@ -11126,11 +11127,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         self.propWindow.Show()
                     self.mainSplitter.UpdateSize()
                     self.videoSplitter.UpdateSize()
-                    try:
-                        wx.GetApp().SafeYieldFor(self, wx.wxEVT_PAINT)
-                    except:
-                        pass
-
                     if self.sdlWindow and self.sdlWindow.running and self.sdlWindow.IsSameMonitor():
                         sdl2.SDL_RestoreWindow(self.sdlWindow.window)
                         if self.options['sdlwindowdocking'] > 0:
@@ -11541,36 +11537,41 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             first = True
             self.HidePreviewWindow()
             self.TabList_BlockUpdate(True)
-            for arg in args:
-                arg = arg.decode(sys.stdin.encoding or encoding)
-                if os.path.isfile(arg):
-                    if os.path.dirname(arg) == '':
-                        arg = os.path.join(self.initialworkdir, arg)
-                    self.OpenFile(filename=arg, hidePreview=True, isSession=True) # BUG: sys.argv gives back short filenames only?!!
-                    if not os.path.splitext(arg)[1].lower() in ('.py', '.pys'):    # GPo 2018
-                        self.currentScript.GotoPos(0)
-                        self.currentScript.EnsureCaretVisible()
+            try:
+                for arg in args:
+                    arg = arg.decode(sys.stdin.encoding or encoding)
+                    if os.path.isfile(arg):
+                        if os.path.dirname(arg) == '':
+                            arg = os.path.join(self.initialworkdir, arg)
+                        self.OpenFile(filename=arg, hidePreview=True, isSession=True) # BUG: sys.argv gives back short filenames only?!!
+                        if not os.path.splitext(arg)[1].lower() in ('.py', '.pys'):    # GPo 2018
+                            self.currentScript.GotoPos(0)
+                            self.currentScript.EnsureCaretVisible()
 #### GPo 2018, execute macro, process arguments
-                        if first:
-                            first = False
-                            if os.path.splitext(arg)[1].lower() == '.avs':
-                                if os.path.isfile(os.path.join(self.macrofolder, 'startup_avs.pys')):
+                            if first:
+                                first = False
+                                if os.path.splitext(arg)[1].lower() == '.avs':
+                                    if os.path.isfile(os.path.join(self.macrofolder, 'startup_avs.pys')):
+                                        wx.CallAfter(self.Update)
+                                        wx.CallAfter(self.ExecuteMacro, os.path.join(self.macrofolder, 'startup_avs.pys'))
+                                elif os.path.isfile(os.path.join(self.macrofolder, 'startup.pys')):
                                     wx.CallAfter(self.Update)
-                                    wx.CallAfter(self.ExecuteMacro, os.path.join(self.macrofolder, 'startup_avs.pys'))
-
-                            elif os.path.isfile(os.path.join(self.macrofolder, 'startup.pys')):
-                                wx.CallAfter(self.Update)
-                                wx.CallAfter(self.ExecuteMacro, os.path.join(self.macrofolder, 'startup.pys'))
-                elif len(arg) > 3:
-                    if arg[:3] == '-em':
-                        wx.CallAfter(self.Update)
-                        wx.CallAfter(self.ExecuteMacro, arg[3:].strip())
-                    elif (arg[:3] == '-sf') and (arg[3:].strip().isdigit()):
-                        self.startupframe = int(arg[3:].strip())
-                        wx.CallAfter(self.Update)
-                        wx.CallAfter(self.ShowVideoFrame, self.startupframe)
-            self.UpdateTabImages() # isSession disables update images also call it now
-            self.TabList_BlockUpdate(False, True)
+                                    wx.CallAfter(self.ExecuteMacro, os.path.join(self.macrofolder, 'startup.pys'))
+                    elif len(arg) > 3: # best is filename as first param and then the flags in this order
+                        if arg[:3] == '-em':                                        # run macro -emD:\tools\my macro.py
+                            wx.CallAfter(self.Update)
+                            wx.CallAfter(self.ExecuteMacro, arg[3:].strip())
+                        elif (arg[:3] == '-sf') and (arg[3:].strip().isdigit()):    # Frame number -sf100
+                            self.startupframe = int(arg[3:].strip())
+                            wx.CallAfter(self.Update)
+                            wx.CallAfter(self.ShowVideoFrame, self.startupframe)
+                        elif (arg[:3] == '-bm') and (arg[3:].strip().isdigit()):    # Bookmark -bm100
+                            wx.CallAfter(self.AddFrameBookmark, int(arg[3:].strip()))
+                        elif (arg[:3] == '-gp') and (arg[3:].strip().isdigit()):    # Tab Group -gp1
+                            wx.CallAfter(self.AssignTabGroup, str(arg[3:].strip()))
+            finally:
+                self.UpdateTabImages()
+                self.TabList_BlockUpdate(False, True)
 ### GPo end ###
 
     def getOptionsDict(self):
@@ -14729,48 +14730,59 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         nb.LockPage = False
         nb.oldpage = None
 
-        if self.options['usetabimages']:
-            color1 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_SCROLLBAR)
-            color2 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_3DDKSHADOW)
-            color3 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
-            color4 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWTEXT)
-            # Create the mask
-            sTab = 0 if self.options['ppiscalingscripttabs'] == 0 else float(self.options['ppiscalingscripttabs']/10.0)
-            factor = max(self.ppi_factor + sTab, 1)
-            w = h = int(factor*15)
-            bmpMask = wx.EmptyBitmap(w, h)
+        #~if self.options['usetabimages']:
+        color1 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_SCROLLBAR)
+        color2 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_3DDKSHADOW)
+        color3 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW)
+        color4 = wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWTEXT)
+        # Create the mask
+        sTab = 0 if self.options['ppiscalingscripttabs'] == 0 else float(self.options['ppiscalingscripttabs']/10.0)
+        factor = max(self.ppi_factor + sTab, 1)
+        w, h = int(factor*15), int(factor*17)
+        bmpMask = wx.EmptyBitmap(w, h)
+        mdc = wx.MemoryDC()
+        mdc.SelectObject(bmpMask)
+        mdc.DrawRoundedRectangle(0,0,w,h,int(factor*4))
+        mdc = None
+        mask = wx.Mask(bmpMask)
+        # Create the bitmap
+        bmpBase = wx.EmptyBitmap(w, h)
+        bmpBase.SetMask(mask)
+        mdc = wx.MemoryDC()
+        mdc.SelectObject(bmpBase)
+        mdc.SetBackground(wx.Brush(color1))
+        mdc.Clear()
+        mdc.SetPen(wx.Pen(color2))
+        mdc.SetBrush(wx.Brush(color2))
+        mdc.DrawPolygon([wx.Point(0,h), wx.Point(w,h), wx.Point(w,0)])
+        mdc.SetPen(wx.Pen(color3))
+        mdc.SetBrush(wx.Brush(color3))
+        th = 3
+        mdc.DrawRoundedRectangle(th,th,w-int(factor*2)*th,h-int(factor*2)*th,0)
+        mdc = None
+        imageBase = bmpBase.ConvertToImage()
+        il = wx.ImageList(w, h)
+        for i in xrange(10):
+            bmp = wx.BitmapFromImage(imageBase)
             mdc = wx.MemoryDC()
-            mdc.SelectObject(bmpMask)
-            mdc.DrawRoundedRectangle(0,0,w,h,int(factor*3))
+            mdc.SelectObject(bmp)
+            mdc.SetTextForeground(color4)
+            mdc.SetFont(wx.Font(int(factor*9), wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, faceName='courier new'))
+            mdc.DrawText(str((i+1) % 10), int(factor*4) if factor < 3 else int(factor*3), int(factor*1.5) if factor > 1 else 0)
             mdc = None
-            mask = wx.Mask(bmpMask)
-            # Create the bitmap
-            bmpBase = wx.EmptyBitmap(w, h)
-            bmpBase.SetMask(mask)
-            mdc = wx.MemoryDC()
-            mdc.SelectObject(bmpBase)
-            mdc.SetBackground(wx.Brush(color1))
-            mdc.Clear()
-            mdc.SetPen(wx.Pen(color2))
-            mdc.SetBrush(wx.Brush(color2))
-            mdc.DrawPolygon([wx.Point(0,h), wx.Point(w,h), wx.Point(w,0)])
-            mdc.SetPen(wx.Pen(color3))
-            mdc.SetBrush(wx.Brush(color3))
-            th = 3
-            mdc.DrawRoundedRectangle(th,th,w-int(factor*2)*th,h-int(factor*2)*th,0)
-            mdc = None
-            imageBase = bmpBase.ConvertToImage()
-            il = wx.ImageList(w, h)
-            for i in xrange(10):
-                bmp = wx.BitmapFromImage(imageBase)
-                mdc = wx.MemoryDC()
-                mdc.SelectObject(bmp)
-                mdc.SetTextForeground(color4)
-                mdc.SetFont(wx.Font(int(factor*8), wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, faceName='courier new'))
-                mdc.DrawText(str((i+1) % 10), int(factor*4),0)
-                mdc = None
-                il.Add(bmp)
-            nb.AssignImageList(il)
+            il.Add(bmp)
+
+        bmp = wx.BitmapFromImage(imageBase)
+        mdc = wx.MemoryDC()
+        mdc.SelectObject(bmp)
+        mdc.SetTextBackground(wx.WHITE)
+        mdc.SetTextForeground(wx.BLUE)
+        mdc.SetFont(wx.Font(int(factor*9), wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD, faceName='arial'))
+        mdc.DrawText('#', int(factor*4),1)
+        mdc = None
+        il.Add(bmp)
+        nb.AssignImageList(il)
+
         # Event binding
         nb.Bind(wx.EVT_MIDDLE_DOWN, self.OnMiddleDownNotebook)
         nb.Bind(wx.EVT_LEFT_DOWN, self.OnLeftDownNotebook)
@@ -18619,9 +18631,15 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             for key, item in temp.iteritems():
                 if not ident or item[1] == ident:
                     if item[2] == 'destroy':
-                        item[0].Destroy()
+                        try:
+                            item[0].Destroy()
+                        except:
+                            pass
                     elif item[2] == 'hide':
-                        item[0].Show(False)
+                        try:
+                            item[0].Show(False)
+                        except:
+                            pass
                     else:
                         temp2[key] = item
                 else:
@@ -21163,38 +21181,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         else:
             self.sdlWindow.Close()
         self.CheckPlayback()
-
-    """
-    def OnMenuOptionsAllowSplitClipFilter(self, event):
-        self.options['fastclipallowfilter'] = event.IsChecked()
-    """
-
-    """
-    def OnMenuOptionsRefreshPaintFrame(self, event):
-        if not event.IsChecked() and self.options['hidethreadprogress']:
-            re = wx.MessageBox(_('Hiding the thread progress dialog will be disabled.\nContinue?'), '', wx.YES_NO|wx.ICON_QUESTION)
-            if re == wx.YES:
-                self.options['hidethreadprogress'] = False
-                self.options['cliprefreshpainter'] = False
-            else:
-                self.UpdateMenuItem(_('Draw frame during clip refresh'), True, _('&Options'))
-                self.options['cliprefreshpainter'] = True
-        else:
-            self.options['cliprefreshpainter'] = True
-
-    def OnSelectHideThreadProgress(self, event):
-        if event.IsChecked():
-            re = wx.YES
-            if not self.options['cliprefreshpainter']:
-                re = wx.MessageBox(_('Options -> "Draw frame during clip refresh" must be enabled to use this option.\n' +
-                                     'Should it be activated?'), '', wx.YES_NO|wx.ICON_QUESTION)
-                if re == wx.YES:
-                    self.options['cliprefreshpainter'] = True
-                    self.UpdateMenuItem(_('Draw frame during clip refresh'), True, _('&Options'))
-                    return
-            if not self.options['cliprefreshpainter']:
-                event.GetEventObject().SetValue(False)
-    """
 
     def OnMenuOptionsAssociate(self, event):
         if os.name == 'nt':
@@ -25648,7 +25634,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             and leads to errors, then the preview must be hidden.
         '''
         self.StopPlayback()
-
         # Get filename via dialog box if not specified
         if not filename:
             default_dir, default_base = (default, '') if os.path.isdir(default) else os.path.split(default)
@@ -25741,8 +25726,11 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     if txt == "" and title.startswith(self.NewFileName):
                         index = indexCur
                     else:
+                        tbc = self.tabChangeLoadBookmarks # new
+                        self.tabChangeLoadBookmarks = False
                         self.NewTab(select=False, framenum=framenum, bookmarks=bookmarks, selections=selections, isSession=isSession)
                         index = self.scriptNotebook.GetPageCount() - 1
+                        self.tabChangeLoadBookmarks = tbc
                     script = self.scriptNotebook.GetPage(index)
 
                     ### GPo new, test for tablist update, seems be good
@@ -26304,7 +26292,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 with open(filename, 'wb') as f:
                     f.write(txt)
                     f.close()
-            except IOErroras as err: # errno 13 -> permission denied
+            except IOError as err: # errno 13 -> permission denied
                 #if err.errno != 13:
                     self.TabList_Close()
                     self.StatusbarTimer_Start(5000, _('Error saving the script: %s') % filename, 2)
@@ -32823,7 +32811,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 with open(previewname, 'wb') as f:
                     f.write(txt)
                     f.close()
-            except IOErroras as err: # errno 13 -> permission denied
+            except IOError as err: # errno 13 -> permission denied
                 if err.errno != 13 or altdir_tried:
                     raise
                 dirname = self.programdir
@@ -35285,8 +35273,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             script = self.currentScript
             index = self.scriptNotebook.GetSelection()
         else:
-            for i in xrange(self.scriptNotebook.GetPagCount()):
-                if script is self.scriptNotebook.GetPag(i):
+            for i in xrange(self.scriptNotebook.GetPageCount()):
+                if script is self.scriptNotebook.GetPage(i):
                     index = i
                     break
         tabTitle = self.scriptNotebook.GetPageText(index)
@@ -35708,13 +35696,17 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 isFrozen = True
             try:
                 if (self.FindFocus() == self.videoWindow) or self.separatevideowindow:
-                    for i in xrange(min(self.scriptNotebook.GetPageCount(), 10)):
-                        self.scriptNotebook.SetPageImage(i, i)
+                    for i in xrange(self.scriptNotebook.GetPageCount()):
+                        if i < 10:
+                            self.scriptNotebook.SetPageImage(i, i)
+                        else:
+                            self.scriptNotebook.SetPageImage(i, -1)
                 else:
                     ''' This takes time if you load many tabs (e.g. > 100) in one session.
                         for each tab you have to go through all the tabs again and again,
                         so I blocked the update for each tab when loading a session or many files
-                        and then update the tab images in one go.'''
+                        and then update the tab images in one go.
+                        It is a bug in Notebook if not multiline style it slows down the speed extremly'''
                     for i in xrange(self.scriptNotebook.GetPageCount()):
                         self.scriptNotebook.SetPageImage(i, -1)
                 if self.options['multilinetab']:
@@ -35722,19 +35714,30 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         w, h = self.scriptNotebook.GetSize()
                         self.scriptNotebook.SetSize((w, h-1))
                         self.scriptNotebook.SetSize((w, h))
+
+                idx = self.scriptNotebook.GetSelection()
+                self.scriptNotebook.SetPageImage(idx, 10) # set # image for the current tab
             finally:
-                #if self.scriptNotebook.IsFrozen(): # don't works well! maybe the parent is also frozen and the result is then wrong? or bug
                 if isFrozen:
                     self.scriptNotebook.Thaw()
+        else:
+            if not self.options['multilinetab']:
+                self.scriptNotebook.Freeze()
+            try:
+                for i in xrange(self.scriptNotebook.GetPageCount()):
+                    self.scriptNotebook.SetPageImage(i, -1)
+                idx = self.scriptNotebook.GetSelection()
+                self.scriptNotebook.SetPageImage(idx, 10) # set # image for the current tab
 
-        # Test it again, multiline flickers if this not used
-        elif self.options['multilinetab']:
-            rows = self.scriptNotebook.GetRowCount()
-            if rows != self.scriptNotebook.GetRowCount():
-                w, h = self.scriptNotebook.GetSize()
-                self.scriptNotebook.SetSize((w, h-1))
-                self.scriptNotebook.SetSize((w, h))
-
+                if self.options['multilinetab']:
+                    rows = self.scriptNotebook.GetRowCount()
+                    if rows != self.scriptNotebook.GetRowCount():
+                        w, h = self.scriptNotebook.GetSize()
+                        self.scriptNotebook.SetSize((w, h-1))
+                        self.scriptNotebook.SetSize((w, h))
+            finally:
+                if not self.options['multilinetab']:
+                    self.scriptNotebook.Thaw()
 
     def TabList_Reload(self):
         if isinstance(self.tabDlg, TabList):
@@ -35832,6 +35835,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         sliderwindowcustomtheme = self.options['sliderwindowcustomtheme']
         sliderWindowShown = self.videoSplitter.IsSplit()
         script = self.currentScript
+        index = self.scriptNotebook.GetSelection()
         #self.HideSliderWindow(script)
         ID = dlg.ShowModal()
         self.dummyObject = None
@@ -35872,7 +35876,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     self.options['syntaxhighlight_styleinsidetriplequotes'] != old_style_triple_quotes):
                         script.styling_refresh_needed = True
                 script.SetUserOptions()
-                if not self.options['usetabimages']:
+                if not self.options['usetabimages'] and i != index:
                     self.scriptNotebook.SetPageImage(i, -1)
                 if old_fullscreen_mode != self.options['fullscreenzoom']:
                     script.lastFsZoom = None
@@ -36468,8 +36472,9 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         return dirname
 
     @AsyncCallWrapper
-    def MacroGetTextEntry(self, message=[''], default=[''], title=_('Enter information'), types=[''], width=400):
-        r'''GetTextEntry(message='', default='', title='Enter information', types='text', width=400)
+    def MacroGetTextEntry(self, message=[''], default=[''], title=_('Enter information'), types=[''], width=400,
+                            canResize=False, getControls=None):
+        r'''GetTextEntry(message='', default='', title='Enter information', types='text', width=400, canResize=False, getControls=None)
 
         Multiple entry dialog box.  In its more simple form displays a dialog box with
         the string 'message' along with a field for text entry, initially filled with
@@ -36497,7 +36502,11 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         Types available:
 
         - 'text': regular text field.
-          'default' values: 1-tuple with the initial field text.
+          'default' values: 1-tuple with the initial field text
+            You can add a text changed event add second default value
+                eg. ('my text', OnTextChanged)  def OnTextChanged(event): your code.
+            You can add a third default value that returns the ctrl itself.
+                eg. ('my text', OnTextChanged, OnGetCtrl) def OnGetCtrl(ctrl)
 
         - 'file_open': text field with additional browse for file button ("open"
               dialog).
@@ -36543,10 +36552,20 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
               following that one) set the tuple to None or any not-convertible-to-int
               value, like ''.
 
+        - 'button': a button that uses the label as text and the default value for the handler
+            eg. defaults = ['text a', 'text b' , OnButton]
+
         A not recognized type string, including '', defaults to 'text' type.
 
         width: minimal horizontal length of the dialog box.  The width is distributed
         uniformly between the entries in each line.
+
+        canResize: if True the dialog can be resized.
+
+        getControls: returns the dialog itself and the insertet controls as dict with int key numbers
+            and a tuple for eatch key value (ctrl, flag, tab index)
+            you must define a function with two parameter: def OnGetControls(dlg, d)
+            the first parameter is the dlg itself and the second the ctrl dict
 
         Return values: list of entered values if the user clicks "OK", empty list
         otherwise.
@@ -36664,12 +36683,22 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         else:
                             misc['width'] = sep_width
                     colOptions = [eachMessage, flag, 'mgte_sep', '', misc]
-
+                elif eachType == 'button':
+                    key += 1
+                    flag = wxp.OPT_ELEM_BUTTON
+                    misc = dict(expand=False)
+                    misc['handler'] = eachDefault[0] # the event for the button
+                    colOptions = [eachMessage, flag, key, '', misc]
+                    options[key] = str(eachDefault[0])
                 else:
                     key += 1
                     flag = ''
                     misc = dict(width=width / lineLen, label_position=wx.VERTICAL)
                     colOptions = [eachMessage, flag, key, '', misc]
+                    if len(eachDefault) > 1:
+                        misc['txt_handler'] = eachDefault[1] # use handler for wx.EVT_TEXT
+                    if len(eachDefault) > 2:
+                        misc['get_ctrl'] = eachDefault[2] # get the ctrl (for txt paste events)
                     options[key] = str(eachDefault[0])
 
                 rowOptions.append(colOptions)
@@ -36677,7 +36706,10 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
         # Open the dialog box and get the values
         dlg = wxp.OptionsDialog(self, optionsDlgInfo, options, title, starText=False,
-                                invert_scroll=self.options['invertscrolling'])
+                                invert_scroll=self.options['invertscrolling'], canResize=canResize)
+        if getControls:
+            wx.CallAfter(getControls, dlg, dlg.controls)
+
         ID = dlg.ShowModal()
         values = []
         if ID == wx.ID_OK:
@@ -36708,7 +36740,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
         if cancel:
             style |= wx.CANCEL
         action = wxp.MessageDlgTop(self, message, title, style)
-        return True if action == wx.OK else False
+        return True if action == wx.ID_OK else False
 
     @AsyncCallWrapper
     def MacroProgressBox(self, max=100, message='', title=_('Progress')):

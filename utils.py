@@ -275,6 +275,12 @@ def sort_alphanumeric(idx=-1):
     else: alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
     return alphanum_key
 
+def isFloat(s):
+    pattern = r'^[-+]?(\d+(\.\d*)?|\.\d+)$'
+    if re.match(pattern, s):
+        return True
+    return False
+
 def FileSizeToString(filename, precision=0, maxsuffix='TB'):
     fsize = os.path.getsize(filename)
     if fsize < 1:

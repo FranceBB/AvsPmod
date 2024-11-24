@@ -1,5 +1,5 @@
 #################################################################################
-## GPo 2022, AvsPmod macro 'Run analysis pass.py', last Update 9.10.2024
+## GPo 2022, AvsPmod macro 'Run analysis pass.py', last Update 18.10.2024
 ## Like menu 'Run analysis pass' but in a separate thread. 
 ## Therefore you can continue working with AvsPmod on another tab (script).
 ## But it is a bit slower than 'Run analysis pass' from the AvsPmod tools menu. 
@@ -10,7 +10,7 @@ import  pyavs, wxp
 
 # init_only > there are functions, e.g. the SceneLog DBSC from StainlessS that runs through its own frame loop
 # and then returns the result or writes it to a file. Set it to True, a dialog is then displayed and you can disable it.
-init_only = False 
+init_only = True 
 
 self = avsp.GetWindow()
 script = self.currentScript
@@ -27,7 +27,9 @@ def runpass(progress, txt, filename, workdir, init_only):
     avsp.SafeCall(progress.Start)
 
     AVI = pyavs.AvsSimpleClipBase(txt, filename=filename, workdir=workdir)
-    if AVI is None:
+    
+    if not isinstance(AVI, pyavs.AvsSimpleClipBase) or not AVI.initialized:
+        AVI = None
         avsp.SafeCall(progress.Close)
         avsp.SafeCall(avsp.MsgBox,'Cannot create AvsSimpleClipBase', 'Analysis pass error')
         return
