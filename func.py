@@ -28,7 +28,7 @@ def GetMatrixName(idx):
     12: 'Chroma ncl',
     13: 'Chroma cl',
     14: 'ICtCp',
-    15: 'IPT-C2",
+    15: 'IPT-C2',
     16: 'YCGCO-R-E',
     17: 'YCGCO-R-O'
     }
