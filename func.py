@@ -29,8 +29,8 @@ def GetMatrixName(idx):
     13: 'Chroma cl',
     14: 'ICtCp',
     15: 'IPT-C2",
-    16: 'YCGCO-R even add",
-    17: 'YCGCO-R odd add"
+    16: 'YCGCO-R-E',
+    17: 'YCGCO-R-O'
     }
     if idx in namedict.keys():
         return namedict[idx]
