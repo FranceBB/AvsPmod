@@ -889,6 +889,9 @@ class AVS_VideoFrame(object):
     def get_read_ptr(self, plane=avs.AVS_PLANAR_Y):
         return avs_get_read_ptr_p(self.cdata, plane) #V6
 
+    def get_raw_read_ptr(self, plane=avs.AVS_PLANAR_Y):
+        return avs_get_read_ptr_p(self.cdata, plane) #V6
+
     def is_writable(self):
         return bool(avs_is_writable(self.cdata)) #V6
 

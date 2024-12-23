@@ -39,6 +39,17 @@ If, for example, there is a '-' in the file name of the dll, AvsPmod will report
 please rename this dll and replace the '-' with a '_'
 
 --------------------------
+Version 2.7.8.9 [2024-12-23] GPo
+--------------------------
+* Transfer and matrix names added, thanks to FranceBB.
+* Added Program Options > Misc 2 > 'Disable DPI awareness*'. Workaround for Linux Wine incompatible Windows DPI awareness.
+- if you use higher DPI values in Wine and display errors occur, this option must be set.
+* Added an option to deactivate the highlighting of the current tab with a blue number sign (Program Options > Misc > 'Highlight the current tab #').
+* Bugfix: if raw frame data was read for PNG 16 bit or for macro pipe functions with yuv4mpeg2 header.
+* Bugfix: an 'UpdateTabImages' error could appear.
+* Some other small fixes
+
+--------------------------
 Version 2.7.8.8 [2024-11-16] GPo
 --------------------------
 * The selected tab shows now an image with blue sign #

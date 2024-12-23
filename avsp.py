@@ -10696,8 +10696,9 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
 
         # Set DPI Awareness and ppi_factor
         self.ppi_factor = 1.0
-        DPI = dpi.DPI()
-        self.ppi_factor = DPI.GetPPIFactor()
+        if not self.options['ppiawarenessoff']:
+            DPI = dpi.DPI()
+            self.ppi_factor = DPI.GetPPIFactor()
         self.setPPIFactor()
 
         # all dialogs fit inside display and create scrollbars if needed
@@ -12057,7 +12058,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             'trimedittransparent': [False, 255],     # GPo 2024, trim editor transparency (Disabled, 255)
             'locateframeoptions': (None,None,-500, 500, 3.0),   # GPo 2024, LocateFrame, macro locateDlg
             'loacateframe_import': '',               # GPo 2024, import 'LocateFrames' from this file if it not found
-            'reloadscriptprogresspos': 1,            # progress posiotion for Reload script: 0=bottom left, 1=bootom right
+            'preloadscriptprogresspos': 1,           # progress posiotion for Reload script: 0=bottom left, 1=bootom right
             # TabList options
             'tbl_dimensions': (-1,-1,intPPI(640),intPPI(560)),
             'tbl_col0w': intPPI(560),
@@ -12130,6 +12131,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             'usetabimages': True,
             'multilinetab': False,
             'fixedwidthtab': False,
+            'highlightcurrtab': True,
             'invertscrolling': False,
             'invertframescrolling': False,
             'dllnamewarning': True,
@@ -12149,6 +12151,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             'periodicbackup': 0,
             'autoupdatevideo': False,
             # PPI scaling (DPI) # GPo 2020
+            'ppiawarenessoff': False,   # disable DPI awareness (Linux Wine 9xx workaraund)
             'ppiscalingstatusbar': 0,
             'ppiscalingscripttabs': 0,
             'ppiscalingvideocontrols': 0,
@@ -13109,7 +13112,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             ),
             (_('Misc'),
                 ((_('Language (read the tooltip!)')+' *', wxp.OPT_ELEM_LIST, 'lang', _('Choose the language used for the interface\nWarning! Changes will be delete keyboard shortcuts'), dict(choices=self.getTranslations()) ), ),
-                ((_('Use keyboard images in tabs'), wxp.OPT_ELEM_CHECK, 'usetabimages', _('Show keyboard images in the script tabs when video has focus'), dict() ), ),
+                ((_('Use keyboard images in tabs'), wxp.OPT_ELEM_CHECK, 'usetabimages', _('Show keyboard images in the script tabs when video has focus'), dict() ),),
+                ((_('Highlight the current tab #'), wxp.OPT_ELEM_CHECK, 'highlightcurrtab', _('Highlight the current tab with blue number sign #'), dict() ), ),
                 ((_('Show tabs in multiline style'), wxp.OPT_ELEM_CHECK, 'multilinetab', _('There can be several rows of tabs'), dict() ), ),
                 ((_('Show tabs in fixed width'), wxp.OPT_ELEM_CHECK, 'fixedwidthtab', _('All tabs will have same width'), dict() ), ),
                 ((_('Invert scroll wheel direction (Tabs, Zoom)'), wxp.OPT_ELEM_CHECK, 'invertscrolling', _('Scroll the mouse wheel up for changing tabs to the right'), dict() ), ),
@@ -13129,7 +13133,8 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 ((_('Custom jump size units'), wxp.OPT_ELEM_RADIO, 'customjumpunits', _('Units of custom jump size'), dict(choices=[(_('frames'), 'frames'),(_('seconds'), 'sec'),(_('minutes'), 'min'),(_('hours'), 'hr')]) ), ),
             ),
             (_('Misc 2'),
-                ((_('DPI settings*'), wxp.OPT_ELEM_BUTTON, '','', dict(handler=self.ShowDpiOptions) ), ),
+                ((_('DPI settings*'), wxp.OPT_ELEM_BUTTON, '','', dict(handler=self.ShowDpiOptions) ),
+                 (_('Disable DPI awareness (Linux Wine)*'), wxp.OPT_ELEM_CHECK, 'ppiawarenessoff', _('Workaround for Linux Wine incompatible Windows DPI awareness'), dict() ), ),
                 (('', wxp.OPT_ELEM_SEP, '', '', dict(adjust_width=False) ), ),
                 ((_('Timeline move sensitivity on the statusbar'), wxp.OPT_ELEM_SPIN, 'timelinestatusbarmovesense', _('Sets the sensitivity of the mouse movement in the status bar, for timeline range move (with or without Ctrl\Shift), lower value more movement'), dict(min_val=5, max_val=300, increment=5) ), ),
                 ((_('Timeline range numbers count'), wxp.OPT_ELEM_LIST, 'timelinenumdivisor', _('How many additional numbers should be displayed in the timeline when a range has been set'), dict(choices=[(_('1 number'), 2),(_('4 numbers'), 5), (_('9 numbers'), 10),]) ), ),
@@ -13143,7 +13148,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                 ((_('Show resample zoom menu*'), wxp.OPT_ELEM_LIST, 'showresamplemenu', _("Show resample menu in zoom menu.\n!! Read Help > 'Resample filter readme'"), dict(choices=[(_('As Submenu'),1), (_('Normal'),2)]) ), ),
                 ((_('Fullscreen zoom'), wxp.OPT_ELEM_LIST, 'fullscreenzoom', _('Zoom setting for Fullscreen or (Fullsize on double click in zoom area)'), dict(choices=[(_('None'),0), (_('Normal'),1), (_('Resample'),2)]) ), ),
                 ((_('Fullscreen/Fullsize  progress dialog'), wxp.OPT_ELEM_LIST, 'fullscreendlgxy', _('Position for the static progress information on loading a frame'), dict(choices=[(_(r'top\left'),0), (_(r'top\right'),1), (_(r'top\center'),2), (_(r'bottom\left'),3), (_(r'bottom\right'),4)]) ), ),
-                ((_('Reload script progress'), wxp.OPT_ELEM_LIST, 'reloadscriptprogresspos', _("Position for the 'Reload script' progress"), dict(choices=[(_('bottom left'),0), (_('bottom right'),1)]) ), ),
+                ((_('Preload script progress'), wxp.OPT_ELEM_LIST, 'preloadscriptprogresspos', _("Position for the 'Preload script' progress"), dict(choices=[(_('bottom left'),0), (_('bottom right'),1)]) ), ),
                 ((_('Show hint for the zoom action area'), wxp.OPT_ELEM_LIST, 'paintzoomhint', _('Draw a hint when the mouse is in a zoom action area (Fullsize, Fullscreen, Resample'), dict(choices=[(_('Off'),0), (_('On - statical'),1), (_('On - auto hide'),2)]) ),
                  (_('Change cursor in zoom action area'), wxp.OPT_ELEM_CHECK, 'zoomareachangescursor', _('Change the cursor if mouse in zoom action area'), dict() ), ),
                 ((_('Show shortcuts in context menus*'), wxp.OPT_ELEM_CHECK, 'contextshowshortcuts', _('Show or hide the context menus shortcuts (video, script)'), dict() ), ),
@@ -18472,6 +18477,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         propWasShown = False
 
                 wx.BeginBusyCursor()
+                self.SetOverlay(0,0, 'Locate frame is running', timeout=200, static=True)
                 disabler = wx.WindowDisabler() # wxPython! close button is not disabled... shit!
                 blocker = wx.EventBlocker(self, wx.wxEVT_ANY) # close button is not blocked
                 try:
@@ -18481,7 +18487,6 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         clip = script.AVI.env.get_var("target_clip", None) # find the clip variable 'target_clip'
                     except:
                         clip = None
-
                     # if not found create the target_clip with the nextScript text if the saved text != the nextScript text
                     # else assign the AVI.locate_clip to the variable clip
                     if not isinstance(clip, avisynth.AVS_Clip):
@@ -18489,7 +18494,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         # cannot use self.ScriptChanged(nextScript), since a False is returned if the clip has already been initialized
                         #if self.last_next_clip is not nextScript.AVI.clip:
                         if self.last_next_script_txt != target_src:
-                            self.StatusbarTimer_Start(1000, "Locate frame: Initializing clip for first use")
+                            self.StatusbarTimer_Start(100, "Locate frame: Initializing clip for first use")
                             script.AVI.locate_clip = None
                             try:
                                 clip = script.AVI.env.invoke('Eval', target_src)
@@ -27163,6 +27168,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         ret = avs_clip.RawFrame(frame)
                 else:
                     ret = avs_clip.RawFrame(frame) # else get direct
+
                 if ret:
                     self.SavePNG(filename, ret, avs_clip.Height / 2)
                     return filename
@@ -30101,6 +30107,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                         script.previewtxt = self.ScriptChanged(script, return_styledtext=True)[1]
                         script.AVI = AVI
                         script.display_clip_refresh_needed = True
+                        script.AviThread = None
                         self.StopPlayback()
                         if self.sdlWindow.running:
                             self.sdlWindow.ResetWindowToNormalSize()
@@ -30282,6 +30289,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     for i in xrange(self.scriptNotebook.GetPageCount()):
                         if self.scriptNotebook.GetPage(i) is script:
                             found = True
+                            script.AviThread = None
                             break
                     if found:
                         while wx.IsBusy() or self.ClipRefreshPainter or not self.IsEnabled() or not self.fullScreenWnd.IsEnabled():
@@ -35686,57 +35694,69 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
             tabname = self.scriptNotebook.GetPageText(index, full=True)
         return tabname
 
+    @AsyncCallWrapper # GPo new
     def UpdateTabImages(self):
         if self.options['usetabimages']:
             if self.options['multilinetab']:
                 rows = self.scriptNotebook.GetRowCount()
                 isFrozen = False
             else:
-                self.scriptNotebook.Freeze() # important or speed slows extremly down if not multiline style (bug ?)
-                isFrozen = True
+                if not self.IsFrozen():
+                    self.scriptNotebook.Freeze() # important or speed slows extremly down if not multiline style (bug ?)
+                    isFrozen = True
             try:
-                if (self.FindFocus() == self.videoWindow) or self.separatevideowindow:
-                    for i in xrange(self.scriptNotebook.GetPageCount()):
-                        if i < 10:
-                            self.scriptNotebook.SetPageImage(i, i)
-                        else:
+                p_count = self.scriptNotebook.GetPageCount()
+                try:
+                    if (self.FindFocus() == self.videoWindow) or self.separatevideowindow:
+                        for i in xrange(p_count):
+                            if i < 10:
+                                self.scriptNotebook.SetPageImage(i, i)
+                            else:
+                                self.scriptNotebook.SetPageImage(i, -1)
+                    else:
+                        ''' This takes time if you load many tabs (e.g. > 100) in one session.
+                            for each tab you have to go through all the tabs again and again,
+                            so I blocked the update for each tab when loading a session or many files
+                            and then update the tab images in one go.
+                            It is a bug in Notebook if not multiline style it slows down the speed extremly'''
+                        for i in xrange(p_count):
                             self.scriptNotebook.SetPageImage(i, -1)
-                else:
-                    ''' This takes time if you load many tabs (e.g. > 100) in one session.
-                        for each tab you have to go through all the tabs again and again,
-                        so I blocked the update for each tab when loading a session or many files
-                        and then update the tab images in one go.
-                        It is a bug in Notebook if not multiline style it slows down the speed extremly'''
-                    for i in xrange(self.scriptNotebook.GetPageCount()):
-                        self.scriptNotebook.SetPageImage(i, -1)
-                if self.options['multilinetab']:
-                    if rows != self.scriptNotebook.GetRowCount():
-                        w, h = self.scriptNotebook.GetSize()
-                        self.scriptNotebook.SetSize((w, h-1))
-                        self.scriptNotebook.SetSize((w, h))
-
-                idx = self.scriptNotebook.GetSelection()
-                self.scriptNotebook.SetPageImage(idx, 10) # set # image for the current tab
+                    if self.options['highlightcurrtab']:
+                        idx = self.scriptNotebook.GetSelection()
+                        self.scriptNotebook.SetPageImage(idx, 10) # set # image for the current tab
+                    if self.options['multilinetab']:
+                        if rows != self.scriptNotebook.GetRowCount():
+                            w, h = self.scriptNotebook.GetSize()
+                            self.scriptNotebook.SetSize((w, h-1))
+                            self.scriptNotebook.SetSize((w, h))
+                except:
+                    pass
             finally:
                 if isFrozen:
                     self.scriptNotebook.Thaw()
         else:
-            if not self.options['multilinetab']:
+            isFrozen = False
+            if not self.options['multilinetab'] and not self.IsFrozen():
                 self.scriptNotebook.Freeze()
+                isFrozen = True
+            rows = self.scriptNotebook.GetRowCount()
             try:
-                for i in xrange(self.scriptNotebook.GetPageCount()):
-                    self.scriptNotebook.SetPageImage(i, -1)
-                idx = self.scriptNotebook.GetSelection()
-                self.scriptNotebook.SetPageImage(idx, 10) # set # image for the current tab
-
-                if self.options['multilinetab']:
-                    rows = self.scriptNotebook.GetRowCount()
-                    if rows != self.scriptNotebook.GetRowCount():
-                        w, h = self.scriptNotebook.GetSize()
-                        self.scriptNotebook.SetSize((w, h-1))
-                        self.scriptNotebook.SetSize((w, h))
+                try:
+                    if self.options['highlightcurrtab']:
+                        p_count = self.scriptNotebook.GetPageCount()
+                        for i in xrange(p_count):
+                            self.scriptNotebook.SetPageImage(i, -1)
+                        idx = self.scriptNotebook.GetSelection()
+                        self.scriptNotebook.SetPageImage(idx, 10) # set # image for the current tab
+                    if self.options['multilinetab']:
+                        if rows != self.scriptNotebook.GetRowCount():
+                            w, h = self.scriptNotebook.GetSize()
+                            self.scriptNotebook.SetSize((w, h-1))
+                            self.scriptNotebook.SetSize((w, h))
+                except:
+                    pass
             finally:
-                if not self.options['multilinetab']:
+                if isFrozen:
                     self.scriptNotebook.Thaw()
 
     def TabList_Reload(self):
@@ -37943,7 +37963,7 @@ class MainFrame(wxp.Frame, WndProcHookMixin):
                     wxp.MessageBox('Cannot create the preview_test.avs for AvsPmod test.', _('Error'), wx.OK|wx.ICON_INFORMATION, self)
 
             x, y = wx.GetDisplaySize() # progress dialog calcs the position from parent
-            if self.options['reloadscriptprogresspos'] == 0:
+            if self.options['preloadscriptprogresspos'] == 0:
                 x = intPPI(15)
             progress = wxp.ProgressDlg(self, 'Preload: '+ title, _(u'Process in progress'), _(u'Waiting for clip initialization'), pos=(x,y), show=True)
             progress.Start()

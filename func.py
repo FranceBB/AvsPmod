@@ -27,7 +27,10 @@ def GetMatrixName(idx):
     11: 'SMPTE ST 2085',
     12: 'Chroma ncl',
     13: 'Chroma cl',
-    14: 'BT.2100'
+    14: 'BT.2100',
+    15: 'IPT-C2',
+    16: 'YCGCO-R-E',
+    17: 'YCGCO-R-O'
     }
     if idx in namedict.keys():
         return namedict[idx]
@@ -92,6 +95,7 @@ def GetTransferName(idx):
     14:'2020_10',
     15:'2020_12',
     16:'st2084',
+    17:'428-1',
     18:'std-b67'
     }
     if idx in namedict.keys():
