@@ -16,7 +16,7 @@ def GetMatrixName(idx):
     0: 'RGB',
     1: 'BT.709',
     2: 'undef',
-    #3: 'undef',
+    #3: 'reserved',
     4: 'FCC T47',
     5: 'BT.470 B/G',
     6: 'BT.601',
@@ -27,7 +27,7 @@ def GetMatrixName(idx):
     11: 'SMPTE ST 2085',
     12: 'Chroma ncl',
     13: 'Chroma cl',
-    14: 'ICtCp',
+    14: 'BT.2100',
     15: 'IPT-C2',
     16: 'YCGCO-R-E',
     17: 'YCGCO-R-O'
@@ -81,23 +81,22 @@ def GetFieldBasedName(idx):
 
 def GetTransferName(idx):
     namedict = {
-    1: '709',
-    2: 'undef',
-    #3: 'undef',
-    4: '470m',
-    5: '470bg',
-    6: '601',
-    7: '240m',
-    8: 'linear',
-    9: 'log100',
-    10: 'log316',
-    11: 'xvycc',
-    13: 'srgb',
-    14: '2020_10',
-    15: '2020_12',
-    16: 'st2084',
-    17: '428-1',
-    18: 'std-b67'
+    1:'709',
+    2:'undef',
+    4:'470m',
+    5:'470bg',
+    6:'601',
+    7:'240m',
+    8:'linear',
+    9:'log100',
+    10:'log316',
+    11:'xvycc',
+    13:'srgb',
+    14:'2020_10',
+    15:'2020_12',
+    16:'st2084',
+    17:'428-1',
+    18:'std-b67'
     }
     if idx in namedict.keys():
         return namedict[idx]
