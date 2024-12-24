@@ -1525,12 +1525,14 @@ class AVS_VideoFrame(object):
         return self.cdata.vfb
 
     def get_read_ptr(self, plane=avs.AVS_PLANAR_Y):
-        #return avs.avs_get_read_ptr_p(self.cdata, plane)  #V6
         return ctypes.cast(                                # GPo
                 int(ffi.cast('unsigned long long',
                 avs.avs_get_read_ptr_p(self.cdata, plane))),
                 ctypes.POINTER(ctypes.c_ubyte)
                 )
+
+    def get_raw_read_ptr(self, plane=avs.AVS_PLANAR_Y):
+        return avs.avs_get_read_ptr_p(self.cdata, plane)  #V6
 
     def is_writable(self):
         return bool(avs.avs_is_writable(self.cdata))

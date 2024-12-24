@@ -238,45 +238,50 @@ if show_progress:
     progress = avsp.ProgressBox(total_frames, '', _('Saving images...'))
 # GPo, since the bookmarks are script related we get the bookmarks from video slider
 bDict = self.GetBookmarkDict()
-for i, frame_range in enumerate(frames):
-    if use_subdirs:
-        dirname2 = os.path.join(dirname, bDict.get(frame_range[0], 
-                                         _('scene_{0:0{1}}').format(i+1, scene_digits)))
-        if not os.path.isdir(dirname2): os.mkdir(dirname2)
-        if not suffix_added:
-            basename2 = '%s%%0%dd%s' % (basename, max(padding, len(str(frame_range[-1])) 
-                if frame_suffix else len(str(len(frame_range)))), ext)
+try:
+    for i, frame_range in enumerate(frames):
+        if use_subdirs:
+            dirname2 = os.path.join(dirname, bDict.get(frame_range[0], 
+                                             _('scene_{0:0{1}}').format(i+1, scene_digits)))
+            if not os.path.isdir(dirname2): os.mkdir(dirname2)
+            if not suffix_added:
+                basename2 = '%s%%0%dd%s' % (basename, max(padding, len(str(frame_range[-1])) 
+                    if frame_suffix else len(str(len(frame_range)))), ext)
+            else:
+                basename2 = basename
+            filename = os.path.join(dirname2, basename2)
+            frame_index = 1
         else:
-            basename2 = basename
-        filename = os.path.join(dirname2, basename2)
-        frame_index = 1
-    else:
-        frame_index = len(paths) + 1
-        
-    first_nr = -1
-    last_nr = -1
-    for j, frame in enumerate(frame_range):
-		if show_progress and not avsp.SafeCall(progress.Update, len(paths), 
-								str(len(paths)) + ' / ' + str(total_frames))[0]:
-			break
-			
-		if first_nr == -1:
-			first_nr = frame if frame_suffix else frame_index + j 
-			
-		ret = self.SaveImage(filename % (frame if frame_suffix else frame_index + j), 
-							 frame=frame, avs_clip=AVS, quality=quality, depth=depth)					 
-		if not ret:
-			break
-		last_nr = frame if frame_suffix else frame_index + j
-		paths.append(ret)
+            frame_index = len(paths) + 1
+            
+        first_nr = -1
+        last_nr = -1
+        for j, frame in enumerate(frame_range):
+            if show_progress and not avsp.SafeCall(progress.Update, len(paths), 
+                                    str(len(paths)) + ' / ' + str(total_frames))[0]:
+                break
+                
+            if first_nr == -1:
+                first_nr = frame if frame_suffix else frame_index + j 
+                
+            ret = self.SaveImage(filename % (frame if frame_suffix else frame_index + j), 
+                                 frame=frame, avs_clip=AVS, quality=quality, depth=depth)					 
+            if not ret:
+                break
+            last_nr = frame if frame_suffix else frame_index + j
+            paths.append(ret)
 
-        
-    if first_nr > -1 and last_nr > -1:
-        if txt: 
-            txt += '\n\+ '
-        else:
-            txt = '\nImg='
-        txt += 'ImageSource("' + filename + '", start=' + str(first_nr) + ', end=' + str(last_nr) + clip_info
+            
+        if first_nr > -1 and last_nr > -1:
+            if txt: 
+                txt += '\n\+ '
+            else:
+                txt = '\nImg='
+            txt += 'ImageSource("' + filename + '", start=' + str(first_nr) + ', end=' + str(last_nr) + clip_info
+except:
+    if show_progress:
+        avsp.SafeCall(progress.Destroy)  
+    raise
 
 if show_progress:
     avsp.SafeCall(progress.Destroy)

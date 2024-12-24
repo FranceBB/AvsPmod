@@ -1737,7 +1737,7 @@ class AvsClipBase:
                     # using get_row_size(plane) and get_height(plane) breaks v2.5.8
                     width = frame.get_row_size() >> self.vi.get_plane_width_subsampling(plane)
                     height = frame.get_height() >> self.vi.get_plane_height_subsampling(plane)
-                    self.env.bit_blt(write_ptr, width, frame.get_read_ptr(plane),
+                    self.env.bit_blt(write_ptr, width, frame.get_raw_read_ptr(plane),
                                      frame.get_pitch(plane), width, height)
                     write_addr += width * height
             else:
@@ -1746,7 +1746,7 @@ class AvsClipBase:
                     write_ptr = avisynth.ffi.cast('unsigned char *', write_addr)
                 else:
                     write_ptr = ctypes.cast(write_addr, P_UBYTE)
-                self.env.bit_blt(write_ptr, frame.get_row_size(), frame.get_read_ptr(),
+                self.env.bit_blt(write_ptr, frame.get_row_size(), frame.get_raw_read_ptr(),
                             frame.get_pitch(), frame.get_row_size(), frame.get_height())
             return buf
 
